@@ -1,0 +1,85 @@
+search:
+  roles:
+  - Software Engineer
+  - Software Developer
+  - Full Stack Developer
+  - Backend Developer
+  - Frontend Developer
+  - Python Developer
+  locations:
+  - India
+  - Bangalore, Karnataka, India
+  - Hyderabad, Telangana, India
+  - Pune, Maharashtra, India
+  - Chennai, Tamil Nadu, India
+  - Delhi NCR, India
+  - Remote, India
+  platforms:
+  - linkedin
+  - indeed
+  - glassdoor
+  - google
+  - naukri
+  - internshala
+  country_indeed: india
+  results_per_platform: 30
+  hours_old: 48
+filtering:
+  only_india: true
+  email_experience_filter: 1_year
+  required_title_keywords:
+  - Software
+  - Developer
+  - Engineer
+  - Full Stack
+  - Backend
+  - Frontend
+  - Python
+  - Java
+  - React
+  - Node
+  - SDE
+  blacklist_keywords:
+  - Senior Director
+  - Vice President
+  - VP of
+  - Sales Executive
+  - Human Resources
+  - HR Manager
+  - Civil Engineer
+  - Mechanical Engineer
+  - Hardware Engineer
+  - Faculty
+  - Professor
+  - Lecturer
+  - Teacher
+  - Trainer
+  - Mentor
+  - Tutor
+  - Network Engineer
+  - Telecom Engineer
+  - RF Engineer
+  - Desktop Support
+  - Laptop Technician
+  - Service Engineer
+  - Field Engineer
+  - Helpdesk
+  - Corporate Finance
+  - Financial Analyst
+  - Accountant
+  - Auditor
+  - Legal Counsel
+  - Recruiter
+  - Talent Acquisition
+  - BPO
+  - Telecaller
+  - Customer Support
+  - Regulatory Affairs
+schedule:
+  time: '13:15'
+  timezone: Asia/Kolkata
+digest:
+  max_jobs_in_email: 100
+  email_subject: "\U0001F680 Daily Job Alert: {count} New Matching Opportunities ({date})"
+  generate_html_preview: true
+  preview_file: latest_digest.html

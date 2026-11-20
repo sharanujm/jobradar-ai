@@ -1,0 +1,21 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables & secrets
+.env
+
+# Database (uncomment to exclude)
+# jobs.db
+*.sqlite3
+
+# Logs and generated files
+*.log
+latest_digest.html
+data/
