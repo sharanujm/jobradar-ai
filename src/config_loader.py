@@ -25,7 +25,7 @@ def load_config(config_path: str = None) -> dict:
 
     # Read email credentials from environment variables (.env), with database fallback
     sender_email = (os.getenv("SENDER_EMAIL") or get_system_setting("sender_email") or "sharanujm@gmail.com").strip()
-    sender_password = (os.getenv("SENDER_APP_PASSWORD") or get_system_setting("sender_password") or "").strip()
+    sender_password = (os.getenv("SENDER_APP_PASSWORD") or get_system_setting("sender_password") or get_system_setting("sender_app_password") or "").strip()
     recipient_email = (os.getenv("RECIPIENT_EMAIL") or get_system_setting("recipient_email") or "").strip()
     smtp_host = (os.getenv("SMTP_HOST") or get_system_setting("smtp_host") or "smtp.gmail.com").strip()
     smtp_port_val = os.getenv("SMTP_PORT") or get_system_setting("smtp_port") or "465"

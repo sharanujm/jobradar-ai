@@ -26,7 +26,7 @@ from src.database import (
     get_user_by_email, upsert_user, get_unemailed_jobs_for_user,
     mark_jobs_delivered_for_user, update_user_schedule, get_connection,
     get_tracker_items_for_user, update_tracker_stage, delete_tracker_item,
-    verify_user_credentials, update_user_profile
+    verify_user_credentials, update_user_profile, get_system_setting, set_system_setting
 )
 from src.resume_matcher import (
     extract_text_from_pdf, extract_text_from_docx, extract_skills_from_text, calculate_job_match,
@@ -254,7 +254,7 @@ def send_personalized_digest_to_user(user: Any, force_send: bool = False) -> tup
     subject = f"🚀 JobRadar AI Digest: {len(selected_jobs)} Roles Found for {user_name} ({today_str})"
 
     cfg = load_config()
-    sent = send_digest_email(
+    result = send_digest_email(
         subject=subject,
         html_content=html_content,
         plain_text_content=plain_text,
@@ -262,14 +262,20 @@ def send_personalized_digest_to_user(user: Any, force_send: bool = False) -> tup
         recipient_override=recipient_email
     )
 
+    if isinstance(result, tuple):
+        sent, detail_msg = result
+    else:
+        sent = bool(result)
+        detail_msg = ""
+
     if sent:
         delivered_ids = [j["id"] for j in selected_jobs]
         mark_jobs_delivered_for_user(recipient_email, delivered_ids)
-        logger.info(f"🎉 [DIGEST DELIVERED] Successfully delivered {len(selected_jobs)} jobs to {recipient_email}!")
-        return True, f"Digest with {len(selected_jobs)} curated jobs sent to {recipient_email}!", len(selected_jobs)
+        logger.info(f"🎉 [DIGEST DELIVERED] Successfully delivered {len(selected_jobs)} jobs to {recipient_email}! ({detail_msg})")
+        return True, f"Digest with {len(selected_jobs)} curated jobs sent to {recipient_email}! {detail_msg}", len(selected_jobs)
     else:
-        logger.error(f"❌ [DIGEST FAILED] Could not deliver to {recipient_email}. Check SMTP credentials in .env")
-        return False, "Failed to send email. Check SMTP settings in .env", len(selected_jobs)
+        logger.error(f"❌ [DIGEST FAILED] Could not deliver to {recipient_email}: {detail_msg}")
+        return False, detail_msg or "Failed to send email. Check email credentials in settings.", len(selected_jobs)
 
 async def background_scheduler_worker():
     """
@@ -1234,6 +1240,101 @@ async def update_schedule_endpoint(req: ScheduleRequest):
         "status": "ok", 
         "user": updated, 
         "message": f"Daily email digest scheduled for {req.email_time} every day!"
+    }
+
+# ------------------------------------------------------------------------------
+# Email Delivery Settings (Render Free Tier HTTPS & SMTP Support)
+# ------------------------------------------------------------------------------
+class EmailSettingsUpdateRequest(BaseModel):
+    resend_api_key: Optional[str] = None
+    brevo_api_key: Optional[str] = None
+    webhook_url: Optional[str] = None
+    sender_email: Optional[str] = None
+    sender_app_password: Optional[str] = None
+
+@app.get("/api/ping")
+async def ping_endpoint():
+    """Keep-alive endpoint for cloud hosting services (Render, Railway, Fly)."""
+    now_ist = datetime.now(IST)
+    return {
+        "status": "alive",
+        "service": "JobRadar AI 2.0",
+        "current_time_ist": now_ist.strftime("%H:%M:%S"),
+        "date_ist": now_ist.strftime("%Y-%m-%d"),
+        "timezone": "Asia/Kolkata (IST)"
+    }
+
+@app.get("/api/automation/email-settings")
+async def get_email_settings_endpoint():
+    resend_key = (os.getenv("RESEND_API_KEY") or get_system_setting("resend_api_key") or "").strip()
+    brevo_key = (os.getenv("BREVO_API_KEY") or get_system_setting("brevo_api_key") or "").strip()
+    webhook_url = (os.getenv("EMAIL_WEBHOOK_URL") or get_system_setting("email_webhook_url") or "").strip()
+    sender_email = (os.getenv("SENDER_EMAIL") or get_system_setting("sender_email") or "sharanujm@gmail.com").strip()
+    has_smtp = bool(os.getenv("SENDER_APP_PASSWORD") or get_system_setting("sender_password") or get_system_setting("sender_app_password"))
+    is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+
+    active_method = "none"
+    if resend_key:
+        active_method = "resend"
+    elif brevo_key:
+        active_method = "brevo"
+    elif webhook_url:
+        active_method = "webhook"
+    elif has_smtp:
+        active_method = "smtp"
+
+    masked_resend = (resend_key[:6] + "..." + resend_key[-4:]) if len(resend_key) > 10 else resend_key
+    masked_brevo = (brevo_key[:6] + "..." + brevo_key[-4:]) if len(brevo_key) > 10 else brevo_key
+
+    return {
+        "status": "ok",
+        "resend_api_key": masked_resend,
+        "has_resend": bool(resend_key),
+        "brevo_api_key": masked_brevo,
+        "has_brevo": bool(brevo_key),
+        "webhook_url": webhook_url,
+        "has_webhook": bool(webhook_url),
+        "sender_email": sender_email,
+        "has_app_password": has_smtp,
+        "is_render": is_render,
+        "active_method": active_method
+    }
+
+@app.post("/api/automation/email-settings")
+async def update_email_settings_endpoint(req: EmailSettingsUpdateRequest):
+    if req.resend_api_key is not None:
+        set_system_setting("resend_api_key", req.resend_api_key.strip())
+    if req.brevo_api_key is not None:
+        set_system_setting("brevo_api_key", req.brevo_api_key.strip())
+    if req.webhook_url is not None:
+        set_system_setting("email_webhook_url", req.webhook_url.strip())
+    if req.sender_email is not None and req.sender_email.strip():
+        set_system_setting("sender_email", req.sender_email.strip())
+    if req.sender_app_password is not None and req.sender_app_password.strip():
+        clean_pass = req.sender_app_password.replace(" ", "").strip()
+        set_system_setting("sender_password", clean_pass)
+        set_system_setting("sender_app_password", clean_pass)
+
+    return {"status": "ok", "message": "Email delivery settings saved successfully!"}
+
+class TestEmailRequest(BaseModel):
+    recipient: str
+
+@app.post("/api/automation/test-email")
+async def test_email_endpoint(req: TestEmailRequest):
+    user = get_user_by_email(req.recipient) or {
+        "email": req.recipient,
+        "name": req.recipient.split("@")[0].capitalize(),
+        "target_role": "Software Engineer",
+        "experience_level": "fresher",
+        "email_experience_filter": "1_year",
+        "skills": ["Python", "JavaScript", "SQL"]
+    }
+    success, message, count = send_personalized_digest_to_user(user, force_send=True)
+    return {
+        "status": "ok" if success else "failed",
+        "message": message,
+        "job_count": count
     }
 
 # ------------------------------------------------------------------------------

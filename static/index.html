@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobRadar AI &bull; Intelligent Job Search, Resume Studio & Application Agent</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.4">
+    <link rel="stylesheet" href="/static/styles.css?v=3.5">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
 </head>
 <body>
@@ -1053,6 +1053,96 @@
                             </button>
                             <button class="btn btn-secondary" onclick="window.open('/latest_digest.html', '_blank')">
                                 <span>&#128065;</span> View Browser HTML Preview (100 Jobs)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- CARD 3: CLOUD EMAIL DELIVERY (RENDER FREE TIER HTTPS SETUP) -->
+                    <div style="background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: 28px; box-shadow: var(--shadow-sm); margin-top: 24px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 16px; margin-bottom: 20px;">
+                            <div>
+                                <h3 style="font-size: 18px; font-weight: 700; margin: 0; display:flex; align-items:center; gap:8px;">
+                                    <span>☁️</span> Cloud Email Delivery Settings (Render Free Tier)
+                                </h3>
+                                <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
+                                    Deliver emails reliably over HTTPS (Port 443) without SMTP port blocking.
+                                </p>
+                            </div>
+                            <span class="status-badge" style="font-size: 12px; background: rgba(79, 70, 229, 0.1); color: #818cf8; border: 1px solid rgba(79, 70, 229, 0.3);" id="delivery-method-badge">
+                                Active: Checking...
+                            </span>
+                        </div>
+
+                        <!-- Render Free Tier Notice -->
+                        <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 20px;">
+                            <div style="font-size: 13px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">
+                                ⚠️ Why do scheduled emails fail on Render Free Tier?
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+                                Render's Free tier firewall <strong>blocks outbound SMTP ports 25, 465, and 587</strong> to prevent spam. Standard Gmail SMTP connections silently timeout.
+                                <br>
+                                To send daily emails directly from Render without buying a paid server, enter a free <strong>Resend API Key</strong> below (communicates via standard <strong>Port 443 HTTPS</strong> which is 100% open on Render).
+                            </div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns: 1fr; gap:16px;">
+                            <div class="form-group" style="margin-bottom:0;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <label class="form-label" style="font-weight:700;">
+                                        Option 1: Resend API Key (Recommended for Render • 100 Free Mails/Day)
+                                    </label>
+                                    <a href="https://resend.com" target="_blank" rel="noopener noreferrer" style="font-size:12px; color:#818cf8; text-decoration:none; font-weight:600;">
+                                        Get Free Key (30 sec) &rarr;
+                                    </a>
+                                </div>
+                                <input type="password" id="input-resend-key" class="form-control" placeholder="re_123456789..." style="font-family: monospace;">
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">
+                                    Sign up at <a href="https://resend.com" target="_blank" style="color:var(--primary);">resend.com</a> &rarr; Click API Keys &rarr; Create Key &rarr; Paste here. No credit card required!
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom:0;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <label class="form-label" style="font-weight:700;">
+                                        Option 2: Brevo API Key (Alternative • 300 Free Mails/Day)
+                                    </label>
+                                    <a href="https://brevo.com" target="_blank" rel="noopener noreferrer" style="font-size:12px; color:#818cf8; text-decoration:none; font-weight:600;">
+                                        Get Free Key &rarr;
+                                    </a>
+                                </div>
+                                <input type="password" id="input-brevo-key" class="form-control" placeholder="xkeysib-..." style="font-family: monospace;">
+                            </div>
+
+                            <!-- Gmail SMTP Credentials (For Local Development) -->
+                            <details style="background:var(--bg-main); border:1px solid var(--border-default); border-radius:var(--radius-md); padding:12px 16px;">
+                                <summary style="font-size:13px; font-weight:700; cursor:pointer; color:var(--text-primary);">
+                                    ⚙️ Gmail SMTP Credentials (For Local Machine / Paid Render)
+                                </summary>
+                                <div style="margin-top:14px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label class="form-label" style="font-size:12px;">Sender Email (Gmail)</label>
+                                        <input type="email" id="input-sender-email" class="form-control" placeholder="sharanujm@gmail.com">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label class="form-label" style="font-size:12px;">16-Char Google App Password</label>
+                                        <input type="password" id="input-sender-password" class="form-control" placeholder="wioceyuuhokqkuuo">
+                                    </div>
+                                </div>
+                                <div style="font-size:11px; color:var(--text-muted); margin-top:8px;">
+                                    Works 100% when running locally via <code>python server.py</code>.
+                                </div>
+                            </details>
+                        </div>
+
+                        <!-- Diagnostic Output Container -->
+                        <div id="email-delivery-diag" style="display:none; margin-top:16px; padding:12px 16px; border-radius:var(--radius-md); font-size:12px; line-height:1.5;"></div>
+
+                        <div style="display:flex; gap:12px; margin-top:20px; flex-wrap:wrap; align-items:center;">
+                            <button class="btn btn-primary" onclick="saveEmailDeliverySettings()">
+                                <span>💾 Save Email Settings</span>
+                            </button>
+                            <button class="btn btn-secondary" onclick="testEmailDelivery()">
+                                <span>⚡ Send Test Email Now</span>
                             </button>
                         </div>
                     </div>
@@ -2732,6 +2822,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=3.4"></script>
+<script src="/static/app.js?v=3.5"></script>
 </body>
 </html>

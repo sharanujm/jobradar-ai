@@ -75,6 +75,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await analyzeResumeATS();
     loadStudyResources(); // Pre-load vault count
     loadPipelineStatus();
+    loadEmailSettings();
 });
 
 // First-Time Sign Up / Login Onboarding
@@ -499,6 +500,7 @@ function switchView(viewName) {
 
     if (viewName === "tracker") loadTrackerJobs();
     if (viewName === "resume") analyzeResumeATS();
+    if (viewName === "automation") { loadPipelineStatus(); loadEmailSettings(); }
     if (viewName === "resources") loadStudyResources();
     if (viewName === "salary") runSalaryBenchmark();
     if (viewName === "interview") initInterviewView();
@@ -2107,7 +2109,16 @@ async function sendEmailDigestNow() {
     const roles = rolesRaw ? rolesRaw.split(",").map(s => s.trim()).filter(Boolean) : (state.currentUser?.email_roles || ["Software Engineer", "Python Developer"]);
     const langs = langsRaw ? langsRaw.split(",").map(s => s.trim()).filter(Boolean) : (state.currentUser?.email_languages || ["Python", "JavaScript"]);
 
+    const diag = document.getElementById("email-delivery-diag");
+    if (diag) {
+        diag.style.display = "block";
+        diag.style.background = "rgba(79, 70, 229, 0.1)";
+        diag.style.border = "1px solid rgba(79, 70, 229, 0.3)";
+        diag.style.color = "var(--text-primary)";
+        diag.innerHTML = `⏳ Building 100-job curated digest and delivering to <strong>${targetEmail}</strong>...`;
+    }
     showToast(`Dispatching 100-job curated digest to ${targetEmail}...`);
+
     try {
         const res = await fetch("/api/automation/send-digest", {
             method: "POST",
@@ -2122,11 +2133,143 @@ async function sendEmailDigestNow() {
         const data = await res.json();
         if (data.status === "ok") {
             showToast(`📬 ${data.message}`);
+            if (diag) {
+                diag.style.background = "rgba(16, 185, 129, 0.1)";
+                diag.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+                diag.innerHTML = `✅ <strong>Delivery Success!</strong> ${data.message}`;
+            }
         } else {
             showToast(`⚠️ ${data.message}`);
+            if (diag) {
+                diag.style.background = "rgba(239, 68, 68, 0.1)";
+                diag.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+                diag.innerHTML = `❌ <strong>Delivery Blocked / Failed:</strong><br>${data.message}`;
+            }
         }
     } catch (e) {
         showToast("Error sending email: " + e.message);
+        if (diag) {
+            diag.style.display = "block";
+            diag.style.background = "rgba(239, 68, 68, 0.1)";
+            diag.innerHTML = `❌ <strong>Network Error:</strong> ${e.message}`;
+        }
+    }
+}
+
+async function loadEmailSettings() {
+    try {
+        const res = await fetch("/api/automation/email-settings");
+        const data = await res.json();
+        if (data.status === "ok") {
+            const badge = document.getElementById("delivery-method-badge");
+            const resendInp = document.getElementById("input-resend-key");
+            const brevoInp = document.getElementById("input-brevo-key");
+            const senderInp = document.getElementById("input-sender-email");
+
+            if (senderInp && data.sender_email) senderInp.value = data.sender_email;
+            if (resendInp && data.has_resend && !resendInp.value) {
+                resendInp.placeholder = data.resend_api_key;
+            }
+            if (brevoInp && data.has_brevo && !brevoInp.value) {
+                brevoInp.placeholder = data.brevo_api_key;
+            }
+
+            if (badge) {
+                if (data.active_method === "resend") {
+                    badge.innerHTML = `<span class="status-dot" style="background:#10b981;"></span> Resend HTTPS Active (Port 443)`;
+                    badge.style.color = "#10b981";
+                } else if (data.active_method === "brevo") {
+                    badge.innerHTML = `<span class="status-dot" style="background:#10b981;"></span> Brevo HTTPS Active (Port 443)`;
+                    badge.style.color = "#10b981";
+                } else if (data.active_method === "smtp") {
+                    badge.innerHTML = `<span class="status-dot" style="background:#3b82f6;"></span> Gmail SMTP (Port 465)`;
+                    badge.style.color = "#60a5fa";
+                } else {
+                    badge.innerHTML = `<span class="status-dot" style="background:#ef4444;"></span> Not Configured`;
+                    badge.style.color = "#f87171";
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Could not load email settings:", e);
+    }
+}
+
+async function saveEmailDeliverySettings() {
+    const resendKey = document.getElementById("input-resend-key")?.value.trim();
+    const brevoKey = document.getElementById("input-brevo-key")?.value.trim();
+    const senderEmail = document.getElementById("input-sender-email")?.value.trim();
+    const senderPass = document.getElementById("input-sender-password")?.value.trim();
+
+    const payload = {};
+    if (resendKey) payload.resend_api_key = resendKey;
+    if (brevoKey) payload.brevo_api_key = brevoKey;
+    if (senderEmail) payload.sender_email = senderEmail;
+    if (senderPass) payload.sender_app_password = senderPass;
+
+    try {
+        const res = await fetch("/api/automation/email-settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            showToast("💾 Email delivery credentials saved!");
+            await loadEmailSettings();
+        } else {
+            showToast("⚠️ " + (data.message || "Failed to save settings"));
+        }
+    } catch (e) {
+        showToast("Error saving email settings: " + e.message);
+    }
+}
+
+async function testEmailDelivery() {
+    const targetEmail = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
+    if (!targetEmail) {
+        showToast("⚠️ Please enter a recipient email address in the box above first!");
+        return;
+    }
+    const diag = document.getElementById("email-delivery-diag");
+    if (diag) {
+        diag.style.display = "block";
+        diag.style.background = "rgba(79, 70, 229, 0.1)";
+        diag.style.border = "1px solid rgba(79, 70, 229, 0.3)";
+        diag.style.color = "var(--text-primary)";
+        diag.innerHTML = `⏳ Testing email delivery to <strong>${targetEmail}</strong>...`;
+    }
+    showToast(`Dispatching test digest to ${targetEmail}...`);
+
+    try {
+        const res = await fetch("/api/automation/test-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipient: targetEmail })
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+            showToast(`📬 ${data.message}`);
+            if (diag) {
+                diag.style.background = "rgba(16, 185, 129, 0.1)";
+                diag.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+                diag.innerHTML = `✅ <strong>Delivery Success!</strong> ${data.message}`;
+            }
+        } else {
+            showToast(`❌ ${data.message}`);
+            if (diag) {
+                diag.style.background = "rgba(239, 68, 68, 0.1)";
+                diag.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+                diag.innerHTML = `❌ <strong>Delivery Blocked / Failed:</strong><br>${data.message}`;
+            }
+        }
+    } catch (e) {
+        showToast("Error: " + e.message);
+        if (diag) {
+            diag.style.display = "block";
+            diag.style.background = "rgba(239, 68, 68, 0.1)";
+            diag.innerHTML = `❌ <strong>Network Error:</strong> ${e.message}`;
+        }
     }
 }
 
