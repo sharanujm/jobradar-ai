@@ -29,8 +29,10 @@ def send_via_resend(
             "User-Agent": "JobRadar-AI/2.0"
         }
         # Resend free tier default test sender is onboarding@resend.dev
-        sender = "JobRadar AI <onboarding@resend.dev>"
-        if from_email and ("@resend.dev" in from_email or not from_email.endswith("@gmail.com")):
+        sender = "onboarding@resend.dev"
+        if from_email and "@resend.dev" in from_email:
+            sender = from_email
+        elif from_email and not any(from_email.lower().endswith(d) for d in ("@gmail.com", "@yahoo.com", "@outlook.com", "@hotmail.com")):
             sender = f"JobRadar AI <{from_email}>"
 
         payload = {
@@ -53,7 +55,12 @@ def send_via_resend(
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8", errors="ignore")
         logger.error(f"❌ [RESEND HTTP ERROR] {e.code}: {err_msg}")
-        return False, f"Resend API Error ({e.code}): {err_msg[:160]}"
+        try:
+            err_json = json.loads(err_msg)
+            readable = err_json.get("message") or err_msg
+        except Exception:
+            readable = err_msg
+        return False, f"Resend API Error ({e.code}): {readable}"
     except Exception as e:
         logger.error(f"❌ [RESEND HTTPS FAILED] {e}")
         return False, f"Resend Error: {e}"
@@ -179,30 +186,43 @@ def send_digest_email(
     brevo_key = (os.getenv("BREVO_API_KEY") or get_system_setting("brevo_api_key") or "").strip()
     webhook_url = (os.getenv("EMAIL_WEBHOOK_URL") or get_system_setting("email_webhook_url") or "").strip()
 
+    resend_err = None
     if resend_key:
         logger.info(f"Connecting to Resend HTTPS API (port 443) to deliver to {recipient}...")
         ok, msg = send_via_resend(resend_key, recipient, subject, html_content, plain_text_content, from_email=sender)
         if ok:
             return True, msg
-        logger.warning(f"Resend delivery attempt failed: {msg}. Falling back...")
+        resend_err = msg
+        logger.warning(f"Resend delivery attempt failed: {msg}.")
 
+    brevo_err = None
     if brevo_key:
         logger.info(f"Connecting to Brevo HTTPS API (port 443) to deliver to {recipient}...")
         ok, msg = send_via_brevo(brevo_key, recipient, subject, html_content, plain_text_content, from_email=sender)
         if ok:
             return True, msg
-        logger.warning(f"Brevo delivery attempt failed: {msg}. Falling back...")
+        brevo_err = msg
+        logger.warning(f"Brevo delivery attempt failed: {msg}.")
 
+    webhook_err = None
     if webhook_url:
         logger.info(f"Connecting to Webhook (port 443) to deliver to {recipient}...")
         ok, msg = send_via_gas_webhook(webhook_url, recipient, subject, html_content, plain_text_content)
         if ok:
             return True, msg
-        logger.warning(f"Webhook delivery attempt failed: {msg}. Falling back...")
+        webhook_err = msg
+        logger.warning(f"Webhook delivery attempt failed: {msg}.")
 
-    # 2. Check if running on Render Free Tier without HTTPS API key
+    # 2. Check if running on Render Free Tier
     is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
-    if is_render and not (resend_key or brevo_key or webhook_url):
+    if is_render:
+        if resend_err:
+            return False, f"Resend API Failed: {resend_err}"
+        if brevo_err:
+            return False, f"Brevo API Failed: {brevo_err}"
+        if webhook_err:
+            return False, f"Webhook Delivery Failed: {webhook_err}"
+
         diag = (
             "Render Free Tier blocks outbound SMTP ports 25, 465, and 587. "
             "To send emails directly from Render, enter a free Resend API key (from resend.com) "

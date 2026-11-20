@@ -1,0 +1,22 @@
+name: 24/7 Cloud Keep-Alive & Automation Engine
+
+on:
+  schedule:
+    # Run every 14 minutes to prevent Render Free tier from sleeping
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+
+jobs:
+  ping_render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping JobRadar AI Cloud Instance
+        run: |
+          echo "⏰ Keep-Alive Ping to keep JobRadar AI alive 24/7..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 45 "https://jobradar-ai-j5t4.onrender.com/api/ping" || echo "failed")
+          echo "HTTP Response Status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ JobRadar AI is active, running, and ready to send daily digests!"
+          else
+            echo "⚠️ Ping received status $STATUS - server was awakened from standby."
+          fi
