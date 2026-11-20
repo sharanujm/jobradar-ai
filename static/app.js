@@ -570,7 +570,7 @@ function renderUserHeader() {
         if (sidebarEmailEl) sidebarEmailEl.textContent = u.email;
         if (autoEmailInput) autoEmailInput.value = u.email;
 
-        const emailTime = u.email_time || "20:00";
+        const emailTime = u.email_time || localStorage.getItem("jobradar_scheduled_time") || "20:00";
         if (sidebarScheduleEl) sidebarScheduleEl.textContent = `Daily Digest: ${formatTimeTo12h(emailTime)}`;
         if (inputScheduleTime) inputScheduleTime.value = emailTime;
 
@@ -1841,17 +1841,30 @@ async function loadPipelineStatus() {
             const badgeEl = document.getElementById("pipeline-status-badge");
             const inputScheduleTime = document.getElementById("input-schedule-time");
 
-            if (nextScrapeEl) nextScrapeEl.textContent = `${data.next_scheduled_scrape} (${formatTimeTo12h(data.next_scheduled_scrape)})`;
-            if (nextDigestEl) nextDigestEl.textContent = `${data.next_scheduled_digest} (${formatTimeTo12h(data.next_scheduled_digest)})`;
             if (leadSelect) leadSelect.value = data.lead_minutes || 30;
             if (autoToggle) autoToggle.checked = data.auto_scrape_enabled;
 
-            // Respect localStorage saved time first, or server schedule
-            const savedTime = localStorage.getItem("jobradar_scheduled_time");
-            const effectiveTime = savedTime || data.next_scheduled_digest || "20:00";
+            // Respect the user's scheduled time:
+            // 1) state.currentUser?.email_time
+            // 2) localStorage.getItem("jobradar_scheduled_time")
+            // 3) data.next_scheduled_digest
+            const effectiveTime = state.currentUser?.email_time || localStorage.getItem("jobradar_scheduled_time") || data.next_scheduled_digest || "20:00";
+
+            if (nextDigestEl) nextDigestEl.textContent = `${effectiveTime} (${formatTimeTo12h(effectiveTime)})`;
             if (inputScheduleTime) {
                 inputScheduleTime.value = effectiveTime;
             }
+
+            // Sync preview scrape time with effectiveTime
+            const leadMin = parseInt(leadSelect?.value || "30", 10);
+            try {
+                const parts = effectiveTime.split(":");
+                const total = (parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) - leadMin + 1440) % 1440;
+                const h = String(Math.floor(total / 60)).padStart(2, "0");
+                const m = String(total % 60).padStart(2, "0");
+                const scrapeStr = `${h}:${m}`;
+                if (nextScrapeEl) nextScrapeEl.textContent = `${scrapeStr} (${formatTimeTo12h(scrapeStr)})`;
+            } catch (e) {}
 
             if (engineStatusEl) {
                 if (data.is_running) {
