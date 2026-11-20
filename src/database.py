@@ -5,7 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 
-DB_PATH = Path(__file__).resolve().parent.parent / "jobs.db"
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = BASE_DIR / "jobs.db"
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
@@ -82,6 +83,30 @@ def init_db(db_path: Path = DB_PATH) -> None:
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_deliveries_user ON user_job_deliveries(user_email)")
+
+    # System Settings Table (SMTP credentials, schedule fallbacks, etc.)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+
+    # Seed default SMTP settings from environment or defaults if not present
+    try:
+        import os
+        from dotenv import load_dotenv
+        load_dotenv(BASE_DIR / ".env")
+        s_email = os.getenv("SENDER_EMAIL", "").strip() or "sharanujm@gmail.com"
+        s_pass = os.getenv("SENDER_APP_PASSWORD", "").strip()
+        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('sender_email', ?)", (s_email,))
+        if s_pass:
+            cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('sender_password', ?)", (s_pass,))
+        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_host', 'smtp.gmail.com')")
+        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_port', '465')")
+        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('use_ssl', 'true')")
+    except Exception:
+        pass
 
     # Migrations for existing databases
     for col_sql in [
@@ -888,18 +913,55 @@ def update_user_profile(user_data: dict, db_path: Path = DB_PATH) -> Optional[Di
     conn.close()
     return get_user_by_email(email, db_path)
 
+def get_system_setting(key: str, default: str = "", db_path: Path = DB_PATH) -> str:
+    """Retrieves a persisted system setting from the database."""
+    try:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM system_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row and row[0] is not None else default
+    except Exception:
+        return default
+
+def set_system_setting(key: str, value: str, db_path: Path = DB_PATH) -> None:
+    """Stores a persisted system setting in the database."""
+    try:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (key, str(value)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error saving system setting {key}: {e}")
+
 def update_user_schedule(email: str, email_time: str, daily_email: bool = True, db_path: Path = DB_PATH) -> Optional[Dict]:
-    """Updates user preferred daily digest time and toggle status."""
+    """Updates user preferred daily digest time and toggle status, auto-upserting if new."""
     conn = get_connection(db_path)
     cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE users 
-        SET email_time = ?, daily_email = ?
-        WHERE LOWER(email) = ?
-    """, (email_time, 1 if daily_email else 0, email.strip().lower()))
+    clean_email = (email or "").strip().lower()
+    if not clean_email:
+        conn.close()
+        return None
+
+    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
+    existing = cursor.fetchone()
+    if not existing:
+        name = clean_email.split("@")[0].capitalize()
+        cursor.execute("""
+            INSERT INTO users (email, name, email_time, daily_email, target_role, experience_level)
+            VALUES (?, ?, ?, ?, 'Software Engineer', 'fresher')
+        """, (clean_email, name, email_time, 1 if daily_email else 0))
+    else:
+        cursor.execute("""
+            UPDATE users 
+            SET email_time = ?, daily_email = ?
+            WHERE LOWER(email) = ?
+        """, (email_time, 1 if daily_email else 0, clean_email))
     conn.commit()
     conn.close()
-    return get_user_by_email(email, db_path)
+    return get_user_by_email(clean_email, db_path)
 
 # Initialize on import
 init_db()

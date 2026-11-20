@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobRadar AI &bull; Intelligent Job Search, Resume Studio & Application Agent</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.2">
+    <link rel="stylesheet" href="/static/styles.css?v=3.3">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
 </head>
 <body>
@@ -934,7 +934,7 @@
 
                         <div class="form-group">
                             <label class="form-label">Recipient Email Address (Where You Receive Jobs)</label>
-                            <input type="email" id="auto-email-input" class="form-control" placeholder="e.g. name@example.com">
+                            <input type="email" id="auto-email-input" class="form-control" placeholder="e.g. name@example.com" oninput="handleAutoEmailInput(this.value)" onchange="handleAutoEmailInput(this.value)">
                         </div>
 
                         <!-- Dedicated Email Digest Strict Filtering Preferences -->
@@ -1037,7 +1037,7 @@
                         <div class="form-group">
                             <label class="form-label">Daily Delivery Time (Choose When to Receive Your 100 Jobs)</label>
                             <div style="display:flex; gap:12px; align-items:center;">
-                                <input type="time" id="input-schedule-time" class="form-control" style="font-size:16px; font-weight:700; width:180px;" value="20:00" onchange="syncPipelineTimesPreview()">
+                                <input type="time" id="input-schedule-time" class="form-control" style="font-size:16px; font-weight:700; width:180px;" value="20:00" onchange="handleScheduleTimeChange(this.value)">
                                 <button class="btn btn-primary" onclick="saveCustomScheduleTime()">
                                     <span>&#128197; Save My Schedule</span>
                                 </button>
@@ -2732,6 +2732,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=3.2"></script>
+<script src="/static/app.js?v=3.3"></script>
 </body>
 </html>

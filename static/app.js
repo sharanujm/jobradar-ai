@@ -54,6 +54,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     checkFirstTimeOnboarding();
     setupNavigation();
     setupDropZone();
+
+    // Immediately restore flexible schedule time and recipient email from localStorage
+    const savedTime = localStorage.getItem("jobradar_scheduled_time");
+    const savedEmail = localStorage.getItem("jobradar_user_email");
+    if (savedTime) {
+        const inpTime = document.getElementById("input-schedule-time");
+        if (inpTime) inpTime.value = savedTime;
+        const sideTime = document.getElementById("sidebar-schedule-display");
+        if (sideTime) sideTime.textContent = `Daily Digest: ${formatTimeTo12h(savedTime)}`;
+    }
+    if (savedEmail) {
+        const inpEmail = document.getElementById("auto-email-input");
+        if (inpEmail && !inpEmail.value) inpEmail.value = savedEmail;
+    }
+
     await loadUserProfile();
     await fetchStats();
     await fetchJobs(true);
@@ -1773,9 +1788,48 @@ async function applyPreset(presetType) {
 // ------------------------------------------------------------------------------
 // Automation & Daily Mail Agent
 // ------------------------------------------------------------------------------
+function handleScheduleTimeChange(timeVal) {
+    if (!timeVal) return;
+    localStorage.setItem("jobradar_scheduled_time", timeVal);
+    syncPipelineTimesPreview();
+
+    const sideSchedule = document.getElementById("sidebar-schedule-display");
+    if (sideSchedule) {
+        sideSchedule.textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
+    }
+
+    const email = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
+    if (email) {
+        fetch("/api/automation/schedule", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email, email_time: timeVal, daily_email: true })
+        }).then(r => r.json()).then(data => {
+            if (data.status === "ok") {
+                if (state.currentUser) {
+                    state.currentUser.email_time = timeVal;
+                    localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
+                }
+                showToast(`⏰ Daily email alert scheduled for ${formatTimeTo12h(timeVal)}!`);
+            }
+        }).catch(err => console.warn("Auto-save schedule:", err));
+    } else {
+        showToast(`⏰ Scheduled time set to ${formatTimeTo12h(timeVal)}!`);
+    }
+}
+
+function handleAutoEmailInput(emailVal) {
+    const clean = (emailVal || "").trim();
+    if (clean) {
+        localStorage.setItem("jobradar_user_email", clean);
+    }
+}
+
 async function loadPipelineStatus() {
     try {
-        const res = await fetch("/api/automation/pipeline-status");
+        const activeEmail = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
+        const url = activeEmail ? `/api/automation/pipeline-status?email=${encodeURIComponent(activeEmail)}` : "/api/automation/pipeline-status";
+        const res = await fetch(url);
         const data = await res.json();
         if (data.status === "ok") {
             const nextScrapeEl = document.getElementById("pipeline-next-scrape");
@@ -1785,11 +1839,19 @@ async function loadPipelineStatus() {
             const autoToggle = document.getElementById("pipeline-auto-scrape-toggle");
             const leadSelect = document.getElementById("pipeline-lead-time");
             const badgeEl = document.getElementById("pipeline-status-badge");
+            const inputScheduleTime = document.getElementById("input-schedule-time");
 
             if (nextScrapeEl) nextScrapeEl.textContent = `${data.next_scheduled_scrape} (${formatTimeTo12h(data.next_scheduled_scrape)})`;
             if (nextDigestEl) nextDigestEl.textContent = `${data.next_scheduled_digest} (${formatTimeTo12h(data.next_scheduled_digest)})`;
             if (leadSelect) leadSelect.value = data.lead_minutes || 30;
             if (autoToggle) autoToggle.checked = data.auto_scrape_enabled;
+
+            // Respect localStorage saved time first, or server schedule
+            const savedTime = localStorage.getItem("jobradar_scheduled_time");
+            const effectiveTime = savedTime || data.next_scheduled_digest || "20:00";
+            if (inputScheduleTime) {
+                inputScheduleTime.value = effectiveTime;
+            }
 
             if (engineStatusEl) {
                 if (data.is_running) {
@@ -1810,7 +1872,7 @@ async function loadPipelineStatus() {
             // Sync sidebar schedule badge
             const sideSchedule = document.getElementById("sidebar-schedule-display");
             if (sideSchedule) {
-                sideSchedule.textContent = `100-Job Digest: ${formatTimeTo12h(data.next_scheduled_digest)}`;
+                sideSchedule.textContent = `Daily Digest: ${formatTimeTo12h(effectiveTime)}`;
             }
         }
     } catch (e) {
@@ -1879,22 +1941,37 @@ async function toggleAutoScrapePipeline() {
 }
 
 async function saveCustomScheduleTime() {
-    const timeVal = document.getElementById("input-schedule-time").value || "20:00";
-    showToast(`Setting your daily email alert to ${formatTimeTo12h(timeVal)}...`);
+    const timeVal = document.getElementById("input-schedule-time")?.value || "20:00";
+    const emailVal = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
+
+    if (!emailVal) {
+        openAuthModal("signup");
+        showToast("Please enter your email address to schedule daily job digests.");
+        return;
+    }
+
+    localStorage.setItem("jobradar_scheduled_time", timeVal);
+    localStorage.setItem("jobradar_user_email", emailVal);
+    showToast(`Setting daily email alert for ${emailVal} at ${formatTimeTo12h(timeVal)}...`);
 
     try {
         const res = await fetch("/api/automation/schedule", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: state.currentUser.email, email_time: timeVal, daily_email: true })
+            body: JSON.stringify({ email: emailVal, email_time: timeVal, daily_email: true })
         });
         const data = await res.json();
         if (data.status === "ok") {
-            state.currentUser.email_time = timeVal;
-            localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
-            document.getElementById("sidebar-schedule-display").textContent = `100-Job Digest: ${formatTimeTo12h(timeVal)}`;
-            showToast(`⏰ 100-Job digest scheduled for ${formatTimeTo12h(timeVal)} daily!`);
-            loadPipelineStatus();
+            if (state.currentUser) {
+                state.currentUser.email_time = timeVal;
+                state.currentUser.email = emailVal;
+                localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
+            }
+            document.getElementById("sidebar-schedule-display").textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
+            showToast(`⏰ 100-Job digest scheduled for ${formatTimeTo12h(timeVal)} daily to ${emailVal}!`);
+            await loadPipelineStatus();
+        } else {
+            showToast(`⚠️ ${data.message || "Could not update schedule"}`);
         }
     } catch (e) {
         showToast("Error updating schedule: " + e.message);
@@ -2004,21 +2081,26 @@ async function saveEmailExpFilter(filterVal) {
 }
 
 async function sendEmailDigestNow() {
-    if (!state.currentUser || !state.currentUser.email) {
-        openAuthModal("login");
-        showToast("Please sign in or create an account to send job digests to your email.");
+    const targetEmail = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
+    if (!targetEmail) {
+        openAuthModal("signup");
+        showToast("Please enter your email address to receive job digests.");
         return;
     }
-    const filter = state.currentUser.email_experience_filter || "1_year";
-    const roles = state.currentUser.email_roles || ["Software Engineer", "Python Developer"];
-    const langs = state.currentUser.email_languages || ["Python", "JavaScript"];
-    showToast(`Dispatching filtered digest to ${state.currentUser.email}...`);
+
+    const filter = state.currentUser?.email_experience_filter || document.getElementById("auto-email-exp-filter")?.value || "1_year";
+    const rolesRaw = document.getElementById("auto-email-roles-input")?.value || "";
+    const langsRaw = document.getElementById("auto-email-languages-input")?.value || "";
+    const roles = rolesRaw ? rolesRaw.split(",").map(s => s.trim()).filter(Boolean) : (state.currentUser?.email_roles || ["Software Engineer", "Python Developer"]);
+    const langs = langsRaw ? langsRaw.split(",").map(s => s.trim()).filter(Boolean) : (state.currentUser?.email_languages || ["Python", "JavaScript"]);
+
+    showToast(`Dispatching 100-job curated digest to ${targetEmail}...`);
     try {
         const res = await fetch("/api/automation/send-digest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-                user_email: state.currentUser.email,
+                user_email: targetEmail,
                 experience_filter: filter,
                 roles: roles,
                 languages: langs

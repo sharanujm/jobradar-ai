@@ -79,6 +79,10 @@ SCAN_STATE = {
 SCHEDULED_LAST_SENT = set()
 SCHEDULED_SCRAPE_LAST_RUN = set()
 
+# Indian Standard Time (IST, UTC+5:30) for scheduled daily digests
+from datetime import timezone, timedelta
+IST = timezone(timedelta(hours=5, minutes=30))
+
 def get_time_minus_minutes(time_str: str, minutes: int = 30) -> str:
     """Calculates HH:MM time minus specified minutes (for pre-digest auto-scrape)."""
     try:
@@ -196,9 +200,30 @@ def send_personalized_digest_to_user(user: Any, force_send: bool = False) -> tup
             if len(pending) >= target_job_count:
                 break
 
+    # Robust fallback: relax filters to ensure candidates always receive matching software roles
+    if len(pending) < target_job_count:
+        logger.info(f"  Relaxing facets to ensure full {target_job_count}-job digest delivery for {recipient_email} ({len(pending)} found so far)...")
+        existing_ids = {j["id"] for j in pending}
+        fallback_jobs, _ = get_jobs_list(
+            limit=target_job_count * 5,
+            experience=email_exp_filter if email_exp_filter != "all" else "",
+            location="all",
+            user_email=recipient_email
+        )
+        for f_job in fallback_jobs:
+            if f_job["id"] not in existing_ids and is_india_location(f_job.get("location"), f_job.get("site")):
+                pending.append(f_job)
+                if len(pending) >= target_job_count:
+                    break
+
     if not pending:
-        logger.warning(f"No India jobs matching your filter criteria found for {recipient_email}.")
-        return False, "No jobs matching your experience, roles, and tech stack filter found in database", 0
+        # Ultimate fallback: top India software engineering jobs from database
+        fallback_jobs, _ = get_jobs_list(limit=target_job_count, location="all")
+        pending = [j for j in fallback_jobs if is_india_location(j.get("location"), j.get("site"))]
+
+    if not pending:
+        logger.warning(f"No India jobs found in database for {recipient_email}.")
+        return False, "No jobs found in database", 0
 
     # Score and rank jobs according to user's resume and skills
     for j in pending:
@@ -255,12 +280,12 @@ async def background_scheduler_worker():
     2. Daily 100-Job Digest Dispatch: Builds, scores, and delivers 100 fresh India roles
        directly to candidates' inboxes at their selected time.
     """
-    logger.info("🕒 Automated Pre-Digest Scraper & Daily Email Engine active (monitoring schedules every 20s)...")
+    logger.info("🕒 Automated Pre-Digest Scraper & Daily Email Engine active (monitoring schedules every 20s in IST)...")
     while True:
         try:
-            now = datetime.now()
-            current_time = now.strftime("%H:%M")
-            today_date = now.strftime("%Y-%m-%d")
+            now_ist = datetime.now(IST)
+            current_time = now_ist.strftime("%H:%M")
+            today_date = now_ist.strftime("%Y-%m-%d")
 
             conn = get_connection()
             cursor = conn.cursor()
@@ -1110,15 +1135,25 @@ async def update_auto_scrape_settings(req: AutoScrapeSettingsRequest):
     }
 
 @app.get("/api/automation/pipeline-status")
-async def get_pipeline_status():
+async def get_pipeline_status(email: Optional[str] = None):
     global SCAN_STATE
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM jobs")
     total_jobs = cursor.fetchone()[0]
-    cursor.execute("SELECT email_time FROM users WHERE daily_email = 1 LIMIT 1")
-    row = cursor.fetchone()
-    email_time = row["email_time"] if row else "20:00"
+
+    email_time = "20:00"
+    clean_email = (email or "").strip().lower()
+    if clean_email:
+        cursor.execute("SELECT email_time FROM users WHERE LOWER(email) = ? LIMIT 1", (clean_email,))
+        row = cursor.fetchone()
+        if row and row["email_time"]:
+            email_time = row["email_time"]
+    else:
+        cursor.execute("SELECT email_time FROM users WHERE daily_email = 1 ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row and row["email_time"]:
+            email_time = row["email_time"]
     conn.close()
 
     lead_min = int(SCAN_STATE.get("lead_minutes", 30))
