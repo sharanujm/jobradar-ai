@@ -4016,7 +4016,7 @@ async function initAutofillView() {
 
 async function loadAutofillProfile() {
     try {
-        const email = state.currentUser?.email || "sharanujm10@gmail.com";
+        const email = state.currentUser?.email || "sharanujm@gmail.com";
         const res = await fetch(`/api/autofill/profile?email=${encodeURIComponent(email)}`);
         if (res.ok) {
             const data = await res.json();
@@ -4106,7 +4106,7 @@ function runSimulatorAutofill() {
         first_name: "Sharanu",
         last_name: "Developer",
         name: "Sharanu",
-        email: "sharanujm10@gmail.com",
+        email: "sharanujm@gmail.com",
         phone: "+91 98765 43210",
         current_city: "Bengaluru, Karnataka, India",
         linkedin_url: "https://linkedin.com/in/sharanu",
@@ -4121,7 +4121,7 @@ function runSimulatorAutofill() {
     const mapping = {
         sim_first_name: p.first_name || p.name?.split(" ")[0] || "Sharanu",
         sim_last_name: p.last_name || p.name?.split(" ")[1] || "Candidate",
-        sim_email: p.email || "sharanujm10@gmail.com",
+        sim_email: p.email || "sharanujm@gmail.com",
         sim_phone: p.phone || "+91 98765 43210",
         sim_city: p.current_city || "Bengaluru, India",
         sim_linkedin: p.linkedin_url || "https://linkedin.com/in/sharanu",
@@ -4185,7 +4185,7 @@ async function generateTailoredPortalAnswers() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                user_email: state.currentUser?.email || "sharanujm10@gmail.com",
+                user_email: state.currentUser?.email || "sharanujm@gmail.com",
                 company: company,
                 role: role
             })

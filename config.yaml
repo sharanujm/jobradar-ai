@@ -76,7 +76,7 @@ filtering:
   - Customer Support
   - Regulatory Affairs
 schedule:
-  time: '13:15'
+  time: 00:06
   timezone: Asia/Kolkata
 digest:
   max_jobs_in_email: 100

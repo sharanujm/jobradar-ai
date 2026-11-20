@@ -31,7 +31,7 @@
     if (!profile) {
         profile = {
             name: "Sharanu",
-            email: "sharanujm10@gmail.com",
+            email: "sharanujm@gmail.com",
             phone: "+91 98765 43210",
             current_city: "Bengaluru, Karnataka, India",
             linkedin_url: "https://linkedin.com/in/sharanu",
