@@ -2658,7 +2658,7 @@ function toggleTheme() {
 // ------------------------------------------------------------------------------
 async function loadStudyResources() {
     try {
-        const email = state.currentUser?.email || "sharanujm@gmail.com";
+        const email = state.currentUser?.email || "";
         const res = await fetch(`/api/resources?email=${encodeURIComponent(email)}`);
         if (!res.ok) throw new Error("Failed to load study resources");
         const data = await res.json();
@@ -2886,7 +2886,7 @@ async function toggleReaderCompletion() {
 async function toggleResourceCompletion(resourceId, event) {
     if (event) event.stopPropagation();
     try {
-        const email = state.currentUser?.email || "sharanujm@gmail.com";
+        const email = state.currentUser?.email || "";
         const res = await fetch("/api/resources/toggle-status", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2973,7 +2973,7 @@ async function submitUploadResource() {
     const finalTitle = title || file.name;
 
     const formData = new FormData();
-    formData.append("email", state.currentUser?.email || "sharanujm@gmail.com");
+    formData.append("email", state.currentUser?.email || "");
     formData.append("title", finalTitle);
     formData.append("category", category);
     formData.append("description", desc);
@@ -3014,7 +3014,7 @@ async function submitLinkResource() {
     if (!url) return showToast("⚠️ Please enter a valid web URL");
 
     try {
-        const email = state.currentUser?.email || "sharanujm@gmail.com";
+        const email = state.currentUser?.email || "";
         const res = await fetch("/api/resources/add-link", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -3047,7 +3047,7 @@ async function handleDeleteResource(resourceId, event) {
     if (!confirm("Are you sure you want to remove this study resource?")) return;
 
     try {
-        const email = state.currentUser?.email || "sharanujm@gmail.com";
+        const email = state.currentUser?.email || "";
         const res = await fetch(`/api/resources/${resourceId}?email=${encodeURIComponent(email)}`, {
             method: "DELETE"
         });
@@ -4016,7 +4016,7 @@ async function initAutofillView() {
 
 async function loadAutofillProfile() {
     try {
-        const email = state.currentUser?.email || "sharanujm@gmail.com";
+        const email = state.currentUser?.email || "";
         const res = await fetch(`/api/autofill/profile?email=${encodeURIComponent(email)}`);
         if (res.ok) {
             const data = await res.json();
@@ -4103,15 +4103,15 @@ function switchSimulatorFormat(format) {
 
 function runSimulatorAutofill() {
     const p = autofillState.profile || {
-        first_name: "Sharanu",
-        last_name: "Developer",
-        name: "Sharanu",
-        email: "sharanujm@gmail.com",
+        first_name: "Alex",
+        last_name: "Johnson",
+        name: "Alex Johnson",
+        email: "alex@example.com",
         phone: "+91 98765 43210",
         current_city: "Bengaluru, Karnataka, India",
-        linkedin_url: "https://linkedin.com/in/sharanu",
-        github_url: "https://github.com/sharanu",
-        portfolio_url: "https://sharanu.dev",
+        linkedin_url: "https://linkedin.com/in/alex-developer",
+        github_url: "https://github.com/alex-dev",
+        portfolio_url: "https://alex-portfolio.dev",
         notice_period: "Immediate (0 Days)",
         expected_ctc: "₹8 - 12 LPA (Negotiable)",
         work_authorization: "Authorized to work in India (Citizen/Permanent Resident)",
@@ -4119,14 +4119,14 @@ function runSimulatorAutofill() {
     };
 
     const mapping = {
-        sim_first_name: p.first_name || p.name?.split(" ")[0] || "Sharanu",
-        sim_last_name: p.last_name || p.name?.split(" ")[1] || "Candidate",
-        sim_email: p.email || "sharanujm@gmail.com",
+        sim_first_name: p.first_name || p.name?.split(" ")[0] || "Alex",
+        sim_last_name: p.last_name || p.name?.split(" ")[1] || "Johnson",
+        sim_email: p.email || "alex@example.com",
         sim_phone: p.phone || "+91 98765 43210",
         sim_city: p.current_city || "Bengaluru, India",
-        sim_linkedin: p.linkedin_url || "https://linkedin.com/in/sharanu",
-        sim_github: p.github_url || "https://github.com/sharanu",
-        sim_portfolio: p.portfolio_url || "https://portfolio.dev",
+        sim_linkedin: p.linkedin_url || "https://linkedin.com/in/alex-developer",
+        sim_github: p.github_url || "https://github.com/alex-dev",
+        sim_portfolio: p.portfolio_url || "https://alex-portfolio.dev",
         sim_notice: p.notice_period || "Immediate",
         sim_ctc: p.expected_ctc || "Competitive",
         sim_auth: p.work_authorization || "Authorized to work in India (Citizen/Permanent Resident)",
@@ -4185,7 +4185,7 @@ async function generateTailoredPortalAnswers() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                user_email: state.currentUser?.email || "sharanujm@gmail.com",
+                user_email: state.currentUser?.email || "",
                 company: company,
                 role: role
             })

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobRadar AI &bull; Intelligent Job Search, Resume Studio & Application Agent</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.1">
+    <link rel="stylesheet" href="/static/styles.css?v=3.2">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
 </head>
 <body>
@@ -12,118 +12,118 @@
 <!-- FIRST-TIME FULLSCREEN SIGN UP / LOGIN ONBOARDING -->
 <div class="auth-fullscreen-overlay" id="auth-onboarding-screen">
     <div class="auth-card-hero" style="position:relative;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
             <div style="display:flex; align-items:center; gap:10px;">
                 <div class="logo-icon">&#10038;</div>
-                <span class="logo-text" style="font-size:24px;">jobradar.</span>
+                <span class="logo-text" style="font-size:22px;">jobradar.</span>
                 <span class="logo-badge">AI 2.0</span>
             </div>
-            <button class="modal-close-btn" onclick="dismissOnboarding()" title="Close & Explore Dashboard as Guest" style="font-size:24px; cursor:pointer;">&times;</button>
+            <button class="modal-close-btn" onclick="dismissOnboarding()" title="Close & Explore Dashboard as Guest" style="font-size:22px; cursor:pointer;">&times;</button>
         </div>
 
-        <div style="display:flex; gap:10px; border-bottom:1px solid var(--border-default); padding-bottom:12px; margin-bottom:20px;">
+        <div style="display:flex; gap:10px; border-bottom:1px solid var(--border-default); padding-bottom:8px; margin-bottom:12px;">
             <button class="pill active" id="onboard-tab-login" onclick="switchOnboardTab('login')">Sign In</button>
             <button class="pill" id="onboard-tab-signup" onclick="switchOnboardTab('signup')">Create Free Account</button>
         </div>
 
         <!-- Inline Auth Message / Error Banner -->
-        <div id="auth-alert-banner" style="display:none; padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; font-weight:500; line-height:1.4;"></div>
+        <div id="auth-alert-banner" style="display:none; padding:8px 12px; border-radius:8px; margin-bottom:10px; font-size:12px; font-weight:500; line-height:1.4;"></div>
 
         <!-- Login Form -->
         <div id="onboard-login-panel">
-            <h2 style="font-family:var(--font-heading); font-size:22px; font-weight:800; margin-bottom:4px;">Welcome Back</h2>
-            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px;">Sign in with your email and password to access your personalized job feed.</p>
+            <h2 style="font-family:var(--font-heading); font-size:20px; font-weight:800; margin-bottom:2px;">Welcome Back</h2>
+            <p style="font-size:12px; color:var(--text-secondary); margin-bottom:14px;">Sign in with your email and password to access your personalized job feed.</p>
 
             <form onsubmit="event.preventDefault(); handleOnboardLogin();" autocomplete="on">
-                <div class="form-group">
-                    <label class="form-label" for="ob-login-email">Email Address</label>
-                    <input type="email" id="ob-login-email" class="form-control" placeholder="e.g. sharanujm@gmail.com" required autocomplete="username">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label" for="ob-login-email" style="font-size:12px;">Email Address</label>
+                    <input type="email" id="ob-login-email" class="form-control" placeholder="e.g. name@example.com" required autocomplete="username" style="padding:9px 12px; font-size:13px;">
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom:14px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <label class="form-label" for="ob-login-password">Password</label>
-                        <a href="javascript:void(0)" onclick="openForgotPasswordPanel()" style="font-size:12px; color:var(--primary); text-decoration:underline; font-weight:600;">Forgot password?</a>
+                        <label class="form-label" for="ob-login-password" style="font-size:12px;">Password</label>
+                        <a href="javascript:void(0)" onclick="openForgotPasswordPanel()" style="font-size:11px; color:var(--primary); text-decoration:underline; font-weight:600;">Forgot password?</a>
                     </div>
                     <div style="position:relative; display:flex; align-items:center;">
-                        <input type="password" id="ob-login-password" class="form-control" placeholder="Enter your password" required autocomplete="current-password" style="padding-right:42px;">
-                        <button type="button" onclick="togglePasswordVisibility('ob-login-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:16px; padding:2px 6px;" title="Show or hide password">👁️</button>
+                        <input type="password" id="ob-login-password" class="form-control" placeholder="Enter your password" required autocomplete="current-password" style="padding:9px 12px; padding-right:40px; font-size:13px;">
+                        <button type="button" onclick="togglePasswordVisibility('ob-login-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:15px; padding:2px 4px;" title="Show or hide password">👁️</button>
                     </div>
                 </div>
 
-                <button type="submit" id="btn-ob-login-submit" class="btn btn-primary" style="width:100%; padding:12px; margin-top:10px; font-size:14px;">
+                <button type="submit" id="btn-ob-login-submit" class="btn btn-primary" style="width:100%; padding:10px; font-size:13px;">
                     <span>Sign In &rarr;</span>
                 </button>
             </form>
-            <div style="text-align:center; margin-top:14px; font-size:13px; color:var(--text-secondary);">
+            <div style="text-align:center; margin-top:12px; font-size:12px; color:var(--text-secondary);">
                 Don't have an account? <a href="javascript:void(0)" onclick="switchOnboardTab('signup')" style="color:var(--primary); font-weight:600;">Create one for free</a>
             </div>
         </div>
 
         <!-- Forgot / Reset Password Panel -->
         <div id="onboard-forgot-panel" style="display:none;">
-            <h2 style="font-family:var(--font-heading); font-size:22px; font-weight:800; margin-bottom:4px;">Reset Your Password</h2>
-            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px;">Enter your registered email and set a new password to immediately log in.</p>
+            <h2 style="font-family:var(--font-heading); font-size:20px; font-weight:800; margin-bottom:2px;">Reset Your Password</h2>
+            <p style="font-size:12px; color:var(--text-secondary); margin-bottom:14px;">Enter your registered email and set a new password to immediately log in.</p>
 
             <form onsubmit="event.preventDefault(); handlePasswordReset();" autocomplete="on">
-                <div class="form-group">
-                    <label class="form-label" for="ob-reset-email">Registered Email Address</label>
-                    <input type="email" id="ob-reset-email" class="form-control" placeholder="e.g. sharanujm@gmail.com" required autocomplete="email">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label" for="ob-reset-email" style="font-size:12px;">Registered Email Address</label>
+                    <input type="email" id="ob-reset-email" class="form-control" placeholder="e.g. name@example.com" required autocomplete="email" style="padding:9px 12px; font-size:13px;">
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="ob-reset-new-password">New Password</label>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label class="form-label" for="ob-reset-new-password" style="font-size:12px;">New Password</label>
                     <div style="position:relative; display:flex; align-items:center;">
-                        <input type="password" id="ob-reset-new-password" class="form-control" placeholder="Choose new password (min 4 chars)" required autocomplete="new-password" style="padding-right:42px;">
-                        <button type="button" onclick="togglePasswordVisibility('ob-reset-new-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:16px; padding:2px 6px;" title="Show or hide password">👁️</button>
+                        <input type="password" id="ob-reset-new-password" class="form-control" placeholder="Choose new password (min 4 chars)" required autocomplete="new-password" style="padding:9px 12px; padding-right:40px; font-size:13px;">
+                        <button type="button" onclick="togglePasswordVisibility('ob-reset-new-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:15px; padding:2px 4px;" title="Show or hide password">👁️</button>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="ob-reset-confirm-password">Confirm New Password</label>
+                <div class="form-group" style="margin-bottom:14px;">
+                    <label class="form-label" for="ob-reset-confirm-password" style="font-size:12px;">Confirm New Password</label>
                     <div style="position:relative; display:flex; align-items:center;">
-                        <input type="password" id="ob-reset-confirm-password" class="form-control" placeholder="Re-enter new password" required autocomplete="new-password" style="padding-right:42px;">
-                        <button type="button" onclick="togglePasswordVisibility('ob-reset-confirm-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:16px; padding:2px 6px;" title="Show or hide password">👁️</button>
+                        <input type="password" id="ob-reset-confirm-password" class="form-control" placeholder="Re-enter new password" required autocomplete="new-password" style="padding:9px 12px; padding-right:40px; font-size:13px;">
+                        <button type="button" onclick="togglePasswordVisibility('ob-reset-confirm-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:15px; padding:2px 4px;" title="Show or hide password">👁️</button>
                     </div>
                 </div>
 
-                <button type="submit" id="btn-ob-reset-submit" class="btn btn-primary" style="width:100%; padding:12px; margin-top:10px; font-size:14px;">
+                <button type="submit" id="btn-ob-reset-submit" class="btn btn-primary" style="width:100%; padding:10px; font-size:13px;">
                     <span>Reset Password &amp; Sign In &rarr;</span>
                 </button>
             </form>
-            <div style="text-align:center; margin-top:14px; font-size:13px; color:var(--text-secondary);">
+            <div style="text-align:center; margin-top:12px; font-size:12px; color:var(--text-secondary);">
                 <a href="javascript:void(0)" onclick="switchOnboardTab('login')" style="color:var(--primary); font-weight:600;">&larr; Back to Sign In</a>
             </div>
         </div>
 
         <!-- Sign Up Form -->
         <div id="onboard-signup-panel" style="display:none;">
-            <h2 style="font-family:var(--font-heading); font-size:22px; font-weight:800; margin-bottom:4px;">Start Automating Your Job Search</h2>
-            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:18px;">Personalize your profile so we find and email matching jobs directly to you.</p>
+            <h2 style="font-family:var(--font-heading); font-size:18px; font-weight:800; margin-bottom:2px;">Start Automating Your Job Search</h2>
+            <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px;">Personalize your profile so we find and email matching jobs directly to you.</p>
 
-            <form onsubmit="event.preventDefault(); handleOnboardSignup();" autocomplete="on">
-                <div class="form-group">
-                    <label class="form-label" for="ob-signup-name">Full Name</label>
-                    <input type="text" id="ob-signup-name" class="form-control" placeholder="e.g. Alex Johnson" required autocomplete="name">
+            <form onsubmit="event.preventDefault(); handleOnboardSignup();" autocomplete="off">
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label" for="ob-signup-name" style="font-size:12px; margin-bottom:3px;">Full Name</label>
+                    <input type="text" id="ob-signup-name" class="form-control" placeholder="e.g. Alex Johnson" required autocomplete="off" style="padding:7px 12px; font-size:13px;">
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="ob-signup-email">Email Address (For Daily Job Alerts)</label>
-                    <input type="email" id="ob-signup-email" class="form-control" placeholder="e.g. alex@example.com" required autocomplete="email">
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label" for="ob-signup-email" style="font-size:12px; margin-bottom:3px;">Email Address (For Daily Job Alerts)</label>
+                    <input type="email" id="ob-signup-email" class="form-control" placeholder="e.g. alex@example.com" required autocomplete="off" style="padding:7px 12px; font-size:13px;">
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="ob-signup-password">Password</label>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label class="form-label" for="ob-signup-password" style="font-size:12px; margin-bottom:3px;">Password</label>
                     <div style="position:relative; display:flex; align-items:center;">
-                        <input type="password" id="ob-signup-password" class="form-control" placeholder="Minimum 4 characters" required autocomplete="new-password" style="padding-right:42px;">
-                        <button type="button" onclick="togglePasswordVisibility('ob-signup-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:16px; padding:2px 6px;" title="Show or hide password">👁️</button>
+                        <input type="password" id="ob-signup-password" class="form-control" placeholder="Minimum 4 characters" required autocomplete="new-password" style="padding:7px 12px; padding-right:40px; font-size:13px;">
+                        <button type="button" onclick="togglePasswordVisibility('ob-signup-password', this)" style="position:absolute; right:10px; background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:15px; padding:2px 4px;" title="Show or hide password">👁️</button>
                     </div>
                 </div>
 
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
-                    <div class="form-group">
-                        <label class="form-label" for="ob-signup-exp">Experience Mode</label>
-                        <select id="ob-signup-exp" class="form-control">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="ob-signup-exp" style="font-size:12px; margin-bottom:3px;">Experience Mode</label>
+                        <select id="ob-signup-exp" class="form-control" style="padding:7px 10px; font-size:12px;">
                             <option value="fresher" selected>🎓 Fresher (0-1 Yrs)</option>
                             <option value="junior">💼 Junior (1-2 Yrs)</option>
                             <option value="mid">🚀 Mid-Level (2-5 Yrs)</option>
@@ -131,28 +131,28 @@
                         </select>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label" for="ob-signup-time">Daily Mail Time</label>
-                        <input type="time" id="ob-signup-time" class="form-control" value="20:00">
+                    <div class="form-group" style="margin:0;">
+                        <label class="form-label" for="ob-signup-time" style="font-size:12px; margin-bottom:3px;">Daily Mail Time</label>
+                        <input type="time" id="ob-signup-time" class="form-control" value="20:00" style="padding:7px 10px; font-size:12px;">
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="ob-signup-role">Target Role</label>
-                    <input type="text" id="ob-signup-role" class="form-control" value="Software Engineer" placeholder="e.g. Software Engineer / Full Stack Developer">
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label class="form-label" for="ob-signup-role" style="font-size:12px; margin-bottom:3px;">Target Role</label>
+                    <input type="text" id="ob-signup-role" class="form-control" value="Software Engineer" placeholder="e.g. Software Engineer / Full Stack Developer" style="padding:7px 12px; font-size:13px;">
                 </div>
 
-                <button type="submit" id="btn-ob-signup-submit" class="btn btn-primary" style="width:100%; padding:12px; margin-top:10px; font-size:14px;">
+                <button type="submit" id="btn-ob-signup-submit" class="btn btn-primary" style="width:100%; padding:9px; font-size:13px;">
                     <span>Create Account &amp; Open Dashboard &rarr;</span>
                 </button>
             </form>
-            <div style="text-align:center; margin-top:14px; font-size:13px; color:var(--text-secondary);">
+            <div style="text-align:center; margin-top:8px; font-size:12px; color:var(--text-secondary);">
                 Already have an account? <a href="javascript:void(0)" onclick="switchOnboardTab('login')" style="color:var(--primary); font-weight:600;">Sign in here</a>
             </div>
         </div>
 
-        <div style="text-align:center; margin-top:18px; padding-top:12px; border-top:1px dashed var(--border-default);">
-            <button onclick="dismissOnboarding()" style="background:none; border:none; color:var(--text-secondary); font-size:12px; cursor:pointer; text-decoration:underline;">
+        <div style="text-align:center; margin-top:10px; padding-top:8px; border-top:1px dashed var(--border-default);">
+            <button onclick="dismissOnboarding()" style="background:none; border:none; color:var(--text-secondary); font-size:11px; cursor:pointer; text-decoration:underline;">
                 Skip for now &bull; Explore Dashboard as Guest &rarr;
             </button>
         </div>
@@ -248,14 +248,14 @@
                     <span id="sidebar-schedule-display">Daily Digest: 8:00 PM</span>
                 </div>
                 <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;" id="sidebar-email-preview">
-                    sharanujm@gmail.com
+                    guest@jobradar.ai
                 </div>
             </div>
 
             <div class="user-profile-bar" id="profile-bar" style="cursor:pointer;" onclick="openProfileModal()">
-                <div class="avatar" id="user-avatar">S</div>
+                <div class="avatar" id="user-avatar">C</div>
                 <div class="user-info">
-                    <div class="user-name" id="user-display-name">Sharanu</div>
+                    <div class="user-name" id="user-display-name">Candidate</div>
                     <div class="user-role" id="user-display-role">Fresher &bull; Software Eng</div>
                 </div>
                 <button title="Profile Settings" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:16px;" onclick="event.stopPropagation(); openProfileModal();">⚙️</button>
@@ -307,8 +307,8 @@
                     <span id="scan-text">Scan for Jobs</span>
                 </button>
                 <button class="btn btn-secondary btn-sm" id="header-user-btn" onclick="handleAuthAction()" style="display:flex; align-items:center; gap:6px; font-weight:600;" title="User Account">
-                    <span id="header-user-avatar" style="width:20px; height:20px; border-radius:50%; background:var(--primary); color:#ffffff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold;">S</span>
-                    <span id="header-user-name" style="font-size:12px;">Sharanu</span>
+                    <span id="header-user-avatar" style="width:20px; height:20px; border-radius:50%; background:var(--primary); color:#ffffff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold;">C</span>
+                    <span id="header-user-name" style="font-size:12px;">Candidate</span>
                 </button>
             </div>
         </header>
@@ -322,7 +322,7 @@
                 <!-- Hero Banner -->
                 <div class="hero-banner">
                     <div class="hero-text">
-                        <h1>Good evening, <span id="hero-username">Sharanu</span> &#10038;</h1>
+                        <h1>Welcome, <span id="hero-username">Candidate</span> &#10038;</h1>
                         <p>The right Software Engineer & Developer positions gathered across LinkedIn, Indeed & Company career pages.</p>
                     </div>
                 </div>
@@ -934,7 +934,7 @@
 
                         <div class="form-group">
                             <label class="form-label">Recipient Email Address (Where You Receive Jobs)</label>
-                            <input type="email" id="auto-email-input" class="form-control" value="sharanujm@gmail.com">
+                            <input type="email" id="auto-email-input" class="form-control" placeholder="e.g. name@example.com">
                         </div>
 
                         <!-- Dedicated Email Digest Strict Filtering Preferences -->
@@ -1701,7 +1701,7 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
                             <div class="form-group" style="margin: 0;">
                                 <label class="form-label" style="font-size: 11px;">First Name *</label>
-                                <input type="text" id="sim_first_name" name="first_name" class="form-control" placeholder="e.g. Sharanu">
+                                <input type="text" id="sim_first_name" name="first_name" class="form-control" placeholder="e.g. Alex">
                             </div>
                             <div class="form-group" style="margin: 0;">
                                 <label class="form-label" style="font-size: 11px;">Last Name *</label>
@@ -1709,7 +1709,7 @@
                             </div>
                             <div class="form-group" style="margin: 0;">
                                 <label class="form-label" style="font-size: 11px;">Email Address *</label>
-                                <input type="email" id="sim_email" name="email" class="form-control" placeholder="sharanu@example.com">
+                                <input type="email" id="sim_email" name="email" class="form-control" placeholder="alex@example.com">
                             </div>
                             <div class="form-group" style="margin: 0;">
                                 <label class="form-label" style="font-size: 11px;">Phone Number *</label>
@@ -1778,11 +1778,11 @@
                         <div class="autofill-profile-grid">
                             <div class="form-group">
                                 <label class="form-label" for="af-name">Full Name</label>
-                                <input type="text" id="af-name" class="form-control" placeholder="e.g. Sharanu">
+                                <input type="text" id="af-name" class="form-control" placeholder="e.g. Alex Johnson">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="af-email">Email Address</label>
-                                <input type="email" id="af-email" class="form-control" placeholder="e.g. sharanujm@gmail.com">
+                                <input type="email" id="af-email" class="form-control" placeholder="e.g. alex@example.com">
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="af-phone">Phone Number</label>
@@ -2732,6 +2732,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=3.1"></script>
+<script src="/static/app.js?v=3.2"></script>
 </body>
 </html>

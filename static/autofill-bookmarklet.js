@@ -30,13 +30,13 @@
     // Default fallback if server not reachable or profile empty
     if (!profile) {
         profile = {
-            name: "Sharanu",
-            email: "sharanujm@gmail.com",
+            name: "Alex Johnson",
+            email: "alex@example.com",
             phone: "+91 98765 43210",
             current_city: "Bengaluru, Karnataka, India",
-            linkedin_url: "https://linkedin.com/in/sharanu",
-            github_url: "https://github.com/sharanu",
-            portfolio_url: "https://sharanu.dev",
+            linkedin_url: "https://linkedin.com/in/alex-developer",
+            github_url: "https://github.com/alex-dev",
+            portfolio_url: "https://alex-portfolio.dev",
             years_experience: "1",
             notice_period: "Immediate",
             expected_ctc: "Competitive / Market Standard",

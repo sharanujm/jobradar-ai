@@ -317,12 +317,12 @@ async def on_startup():
     asyncio.create_task(background_scheduler_worker())
 
 # Default user setup for onboarding
-DEFAULT_EMAIL = "sharanujm@gmail.com"
+DEFAULT_EMAIL = "candidate@jobradar.ai"
 existing_default = get_user_by_email(DEFAULT_EMAIL)
 if not existing_default:
     upsert_user({
         "email": DEFAULT_EMAIL,
-        "name": "Sharanu",
+        "name": "Candidate",
         "password": "password123",
         "target_role": "Software Engineer",
         "experience_level": "fresher",
