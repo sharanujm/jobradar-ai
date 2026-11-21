@@ -1139,7 +1139,14 @@ function createJobCardHTML(job) {
                 <div class="job-title-group">
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
                         <span class="badge badge-${site}">${siteName}</span>
-                        ${job.exp_badge ? `<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #dbeafe;">${escapeHtml(job.exp_badge.label || '🎯 1 Yr Exp')}</span>` : ''}
+                        ${job.exp_badge ? (() => {
+                            const cat = job.exp_badge.category;
+                            const styleStr = cat === 'senior' ? 'background:rgba(168,85,247,0.14); color:#c084fc; border:1px solid rgba(168,85,247,0.35);' :
+                                            (cat === 'mid' ? 'background:rgba(99,102,241,0.14); color:#818cf8; border:1px solid rgba(99,102,241,0.35);' :
+                                            (cat === 'fresher' ? 'background:rgba(16,185,129,0.14); color:#34d399; border:1px solid rgba(16,185,129,0.35);' :
+                                            'background:rgba(59,130,246,0.14); color:#60a5fa; border:1px solid rgba(59,130,246,0.35);'));
+                            return `<span class="badge" style="${styleStr}">${escapeHtml(job.exp_badge.label || '🎯 1-2 Yrs Exp')}</span>`;
+                        })() : ''}
                         ${isRemote ? `<span class="badge" style="background:#ecfdf5; color:#065f46;">🌐 Remote</span>` : ''}
                         ${salary ? `<span class="badge" style="background:#fef3c7; color:#92400e;">💰 ${salary}</span>` : ''}
                     </div>
