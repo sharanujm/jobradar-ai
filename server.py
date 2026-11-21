@@ -345,6 +345,12 @@ async def background_scheduler_worker():
 
 @app.on_event("startup")
 async def on_startup():
+    try:
+        from src.database import init_db, backfill_jobs_experience
+        init_db()
+        asyncio.create_task(asyncio.to_thread(backfill_jobs_experience, force=True))
+    except Exception as e:
+        logger.error(f"Startup experience backfill error: {e}")
     asyncio.create_task(background_scheduler_worker())
 
 # Default user setup for onboarding
