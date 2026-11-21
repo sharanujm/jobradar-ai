@@ -149,6 +149,15 @@ function openForgotPasswordPanel() {
     }
 }
 
+async function safeParseResponse(res) {
+    try {
+        const text = await res.text();
+        return text ? JSON.parse(text) : {};
+    } catch (_) {
+        return {};
+    }
+}
+
 async function handlePasswordReset() {
     hideAuthAlert();
     const email = (document.getElementById("ob-reset-email")?.value || "").trim().toLowerCase();
@@ -180,9 +189,9 @@ async function handlePasswordReset() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, new_password: newPw })
         });
-        const data = await res.json();
+        const data = await safeParseResponse(res);
         if (!res.ok) {
-            showAuthAlert(data.detail || "Failed to reset password.", "error");
+            showAuthAlert(data.detail || (res.status >= 500 ? "Server is waking up. Please retry in 5 seconds." : "Failed to reset password."), "error");
             return;
         }
 
@@ -314,10 +323,10 @@ async function handleOnboardSignup() {
             })
         });
 
-        const data = await res.json();
+        const data = await safeParseResponse(res);
 
         if (!res.ok) {
-            const detail = data.detail || "Failed to create account.";
+            const detail = data.detail || (res.status >= 500 ? "Server is waking up. Please retry in 5 seconds." : "Failed to create account.");
             if (res.status === 409) {
                 showAuthAlert(`${detail} <a href="javascript:void(0)" onclick="switchToLoginWithEmail('${escapeHtml(email)}')" style="color:var(--primary); font-weight:700; text-decoration:underline; margin-left:6px;">Sign In Now</a>`, "warning");
             } else {
@@ -378,10 +387,10 @@ async function handleOnboardLogin() {
             body: JSON.stringify({ email, password })
         });
 
-        const data = await res.json();
+        const data = await safeParseResponse(res);
 
         if (!res.ok) {
-            const detail = data.detail || "Invalid login credentials. Please try again.";
+            const detail = data.detail || (res.status >= 500 ? "Server is waking up or deploying. Please try again in 5 seconds." : "Invalid login credentials. Please try again.");
             if (res.status === 404) {
                 showAuthAlert(`${detail} <a href="javascript:void(0)" onclick="switchToSignupWithEmail('${escapeHtml(email)}')" style="color:var(--primary); font-weight:700; text-decoration:underline; margin-left:6px;">Create Account</a>`, "error");
             } else {
