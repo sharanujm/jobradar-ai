@@ -186,6 +186,27 @@ def send_digest_email(
     brevo_key = (os.getenv("BREVO_API_KEY") or get_system_setting("brevo_api_key") or "").strip()
     webhook_url = (os.getenv("EMAIL_WEBHOOK_URL") or get_system_setting("email_webhook_url") or "").strip()
 
+    # Fallback to email_credentials.json on disk if present
+    if not resend_key or not brevo_key or not sender or not password:
+        try:
+            from pathlib import Path
+            cred_file = Path(__file__).resolve().parent.parent / "email_credentials.json"
+            if cred_file.exists():
+                with open(cred_file, "r", encoding="utf-8") as f:
+                    file_creds = json.load(f) or {}
+                if not resend_key:
+                    resend_key = (file_creds.get("resend_api_key") or "").strip()
+                if not brevo_key:
+                    brevo_key = (file_creds.get("brevo_api_key") or "").strip()
+                if not webhook_url:
+                    webhook_url = (file_creds.get("email_webhook_url") or "").strip()
+                if not sender or sender == "sharanujm@gmail.com":
+                    sender = (file_creds.get("sender_email") or sender).strip()
+                if not password:
+                    password = (file_creds.get("sender_password") or file_creds.get("sender_app_password") or "").strip()
+        except Exception:
+            pass
+
     resend_err = None
     if resend_key:
         logger.info(f"Connecting to Resend HTTPS API (port 443) to deliver to {recipient}...")

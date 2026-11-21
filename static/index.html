@@ -1037,7 +1037,7 @@
                         <div class="form-group">
                             <label class="form-label">Daily Delivery Time (Choose When to Receive Your 100 Jobs)</label>
                             <div style="display:flex; gap:12px; align-items:center;">
-                                <input type="time" id="input-schedule-time" class="form-control" style="font-size:16px; font-weight:700; width:180px;" value="20:00" oninput="handleScheduleTimeChange(this.value)" onchange="handleScheduleTimeChange(this.value)">
+                                <input type="time" id="input-schedule-time" class="form-control" style="font-size:16px; font-weight:700; width:180px;" value="20:00" onchange="saveCustomScheduleTime()">
                                 <button class="btn btn-primary" onclick="saveCustomScheduleTime()">
                                     <span>&#128197; Save My Schedule</span>
                                 </button>
@@ -2826,6 +2826,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=3.8"></script>
+<script src="/static/app.js?v=3.9"></script>
 </body>
 </html>

@@ -105,6 +105,18 @@ def init_db(db_path: Path = DB_PATH) -> None:
         cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_host', 'smtp.gmail.com')")
         cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_port', '465')")
         cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('use_ssl', 'true')")
+
+        # Load from email_credentials.json if present
+        cred_file = BASE_DIR / "email_credentials.json"
+        if cred_file.exists():
+            try:
+                with open(cred_file, "r", encoding="utf-8") as f:
+                    creds = json.load(f) or {}
+                for k, v in creds.items():
+                    if v:
+                        cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (k, str(v)))
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -136,7 +148,9 @@ def init_db(db_path: Path = DB_PATH) -> None:
         "ALTER TABLE users ADD COLUMN summary_bio TEXT DEFAULT ''",
         "ALTER TABLE jobs ADD COLUMN min_exp REAL DEFAULT NULL",
         "ALTER TABLE jobs ADD COLUMN max_exp REAL DEFAULT NULL",
-        "ALTER TABLE jobs ADD COLUMN exp_category TEXT DEFAULT '1_year'"
+        "ALTER TABLE jobs ADD COLUMN exp_category TEXT DEFAULT '1_year'",
+        "ALTER TABLE users ADD COLUMN last_digest_date TEXT DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN last_digest_at TEXT DEFAULT ''"
     ]:
         try:
             cursor.execute(col_sql)
@@ -930,8 +944,34 @@ def get_system_setting(key: str, default: str = "", db_path: Path = DB_PATH) -> 
     except Exception:
         return default
 
+def normalize_time_str(time_str: str) -> str:
+    """Normalizes any time string (12h with AM/PM or 24h) to a strict HH:MM 24-hour string."""
+    if not time_str:
+        return "20:00"
+    s = str(time_str).strip()
+    from datetime import datetime
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M", "%I %p"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.strftime("%H:%M")
+        except ValueError:
+            pass
+    parts = s.split(":")
+    if len(parts) == 2:
+        try:
+            h = int(parts[0])
+            m = int(parts[1][:2])
+            if "pm" in s.lower() and h < 12:
+                h += 12
+            elif "am" in s.lower() and h == 12:
+                h = 0
+            return f"{h:02d}:{m:02d}"
+        except Exception:
+            pass
+    return "20:00"
+
 def set_system_setting(key: str, value: str, db_path: Path = DB_PATH) -> None:
-    """Stores a persisted system setting in the database."""
+    """Stores a persisted system setting in the database and syncs to email_credentials.json."""
     try:
         conn = get_connection(db_path)
         cursor = conn.cursor()
@@ -940,6 +980,22 @@ def set_system_setting(key: str, value: str, db_path: Path = DB_PATH) -> None:
         conn.close()
     except Exception as e:
         logger.error(f"Error saving system setting {key}: {e}")
+
+    # Also persist to email_credentials.json backup
+    try:
+        cred_file = BASE_DIR / "email_credentials.json"
+        creds = {}
+        if cred_file.exists():
+            try:
+                with open(cred_file, "r", encoding="utf-8") as f:
+                    creds = json.load(f) or {}
+            except Exception:
+                creds = {}
+        creds[key] = str(value)
+        with open(cred_file, "w", encoding="utf-8") as f:
+            json.dump(creds, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Could not backup to email_credentials.json: {e}")
 
 def update_user_schedule(email: str, email_time: str, daily_email: bool = True, db_path: Path = DB_PATH) -> Optional[Dict]:
     """Updates user preferred daily digest time and toggle status, auto-upserting if new."""
@@ -950,6 +1006,8 @@ def update_user_schedule(email: str, email_time: str, daily_email: bool = True, 
         conn.close()
         return None
 
+    clean_time = normalize_time_str(email_time)
+
     cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
     existing = cursor.fetchone()
     if not existing:
@@ -957,16 +1015,42 @@ def update_user_schedule(email: str, email_time: str, daily_email: bool = True, 
         cursor.execute("""
             INSERT INTO users (email, name, email_time, daily_email, target_role, experience_level)
             VALUES (?, ?, ?, ?, 'Software Engineer', 'fresher')
-        """, (clean_email, name, email_time, 1 if daily_email else 0))
+        """, (clean_email, name, clean_time, 1 if daily_email else 0))
     else:
         cursor.execute("""
             UPDATE users 
             SET email_time = ?, daily_email = ?
             WHERE LOWER(email) = ?
-        """, (email_time, 1 if daily_email else 0, clean_email))
+        """, (clean_time, 1 if daily_email else 0, clean_email))
     conn.commit()
     conn.close()
     return get_user_by_email(clean_email, db_path)
+
+def mark_user_digest_sent(email: str, date_str: str, time_str: str = "", db_path: Path = DB_PATH) -> None:
+    """Records that today's digest was sent to this user, preventing duplicate delivery on subsequent ticks."""
+    try:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE users 
+            SET last_digest_date = ?, last_digest_at = ?
+            WHERE LOWER(email) = ?
+        """, (date_str, time_str, (email or "").strip().lower()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error marking digest sent for {email}: {e}")
+
+def reset_user_digest_tracking(email: str, db_path: Path = DB_PATH) -> None:
+    """Clears last digest date so user can immediately receive a digest when changing schedule time to test."""
+    try:
+        conn = get_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET last_digest_date = '' WHERE LOWER(email) = ?", ((email or "").strip().lower(),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error resetting digest tracking for {email}: {e}")
 
 # Initialize on import
 init_db()

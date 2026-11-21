@@ -26,7 +26,8 @@ from src.database import (
     get_user_by_email, upsert_user, get_unemailed_jobs_for_user,
     mark_jobs_delivered_for_user, update_user_schedule, get_connection,
     get_tracker_items_for_user, update_tracker_stage, delete_tracker_item,
-    verify_user_credentials, update_user_profile, get_system_setting, set_system_setting
+    verify_user_credentials, update_user_profile, get_system_setting, set_system_setting,
+    normalize_time_str, mark_user_digest_sent, reset_user_digest_tracking
 )
 from src.resume_matcher import (
     extract_text_from_pdf, extract_text_from_docx, extract_skills_from_text, calculate_job_match,
@@ -277,6 +278,66 @@ def send_personalized_digest_to_user(user: Any, force_send: bool = False) -> tup
         logger.error(f"❌ [DIGEST FAILED] Could not deliver to {recipient_email}: {detail_msg}")
         return False, detail_msg or "Failed to send email. Check email credentials in settings.", len(selected_jobs)
 
+def check_and_send_scheduled_digests() -> List[str]:
+    """
+    Evaluates all candidates with daily_email=1 against the current IST time.
+    Uses catch-up logic:
+    If today's digest has not yet been sent (u['last_digest_date'] != today_date)
+    and current_time >= user_time, dispatches today's 100-job digest immediately.
+    Guarantees email delivery even if Render was asleep or woke up after the exact minute.
+    Returns list of recipients triggered.
+    """
+    triggered = []
+    try:
+        now_ist = datetime.now(IST)
+        current_time = now_ist.strftime("%H:%M")
+        today_date = now_ist.strftime("%Y-%m-%d")
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE daily_email = 1")
+        users = cursor.fetchall()
+        conn.close()
+
+        for row in users:
+            u = dict(row)
+            user_email = (u.get("email") or "").strip().lower()
+            if not user_email or "@" not in user_email:
+                continue
+
+            user_time = normalize_time_str(u.get("email_time") or "20:00")
+            last_date = (u.get("last_digest_date") or "").strip()
+
+            mem_key = f"{user_email}_{today_date}"
+            # Catch-up check:
+            # 1. Not sent today yet in database
+            # 2. Scheduled time has arrived or passed (current_time >= user_time)
+            # 3. Not in memory cache for today
+            if last_date != today_date and current_time >= user_time and mem_key not in SCHEDULED_LAST_SENT:
+                logger.info(f"⚡ [SCHEDULE HIT/CATCH-UP] Due 100-job digest for {user_email} (scheduled {user_time}, current {current_time}, last sent '{last_date}') -> Dispatching now...")
+                SCHEDULED_LAST_SENT.add(mem_key)
+                mark_user_digest_sent(user_email, today_date, current_time)
+                try:
+                    u["skills"] = json.loads(u.get("skills") or "[]")
+                except Exception:
+                    u["skills"] = []
+
+                # Dispatch asynchronously whether inside or outside an active asyncio loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(asyncio.to_thread(send_personalized_digest_to_user, u))
+                except RuntimeError:
+                    import threading
+                    t = threading.Thread(target=send_personalized_digest_to_user, args=(u,), daemon=True)
+                    t.start()
+
+                triggered.append(user_email)
+
+    except Exception as e:
+        logger.error(f"Error checking scheduled digests: {e}", exc_info=True)
+
+    return triggered
+
 async def background_scheduler_worker():
     """
     Multi-User Automated Job Pipeline:
@@ -284,7 +345,7 @@ async def background_scheduler_worker():
        (LinkedIn, Indeed, Internshala, Naukri, Google Jobs) strictly for India
        30 minutes (configurable) before each candidate's scheduled email dispatch.
     2. Daily 100-Job Digest Dispatch: Builds, scores, and delivers 100 fresh India roles
-       directly to candidates' inboxes at their selected time.
+       directly to candidates' inboxes at their selected time with catch-up logic.
     """
     logger.info("🕒 Automated Pre-Digest Scraper & Daily Email Engine active (monitoring schedules every 20s in IST)...")
     while True:
@@ -304,19 +365,14 @@ async def background_scheduler_worker():
 
             for row in users:
                 u = dict(row)
-                try:
-                    u["skills"] = json.loads(u.get("skills") or "[]")
-                except Exception:
-                    u["skills"] = []
-
-                user_email = u.get("email", "").strip().lower()
-                user_time = (u.get("email_time") or "20:00").strip()
+                user_email = (u.get("email") or "").strip().lower()
+                user_time = normalize_time_str(u.get("email_time") or "20:00")
 
                 # Calculate pre-digest auto-scrape time (e.g. 19:30 for 20:00 digest)
                 scrape_time = get_time_minus_minutes(user_time, lead_min)
                 active_scrape_times.append(scrape_time)
 
-                # Step 1: Pre-Digest Automated Scraping (30m before daily email)
+                # Pre-Digest Automated Scraping (30m before daily email)
                 if SCAN_STATE.get("auto_scrape_enabled", True) and current_time == scrape_time:
                     scrape_key = f"scrape_{today_date}_{scrape_time}"
                     if scrape_key not in SCHEDULED_SCRAPE_LAST_RUN:
@@ -327,16 +383,11 @@ async def background_scheduler_worker():
                         else:
                             logger.info(f"ℹ️ Scraper already active in background at {current_time}.")
 
-                # Step 2: Daily 100-Job Email Digest Delivery
-                if current_time == user_time:
-                    trigger_key = f"{user_email}_{today_date}_{user_time}"
-                    if trigger_key not in SCHEDULED_LAST_SENT:
-                        logger.info(f"⚡ [SCHEDULE HIT] Delivering scheduled 100-job digest for {user_email} at {current_time}...")
-                        SCHEDULED_LAST_SENT.add(trigger_key)
-                        send_personalized_digest_to_user(u)
-
             if active_scrape_times:
                 SCAN_STATE["next_scheduled_scrape"] = active_scrape_times[0]
+
+            # Daily 100-Job Digest Catch-Up Delivery
+            check_and_send_scheduled_digests()
 
         except Exception as e:
             logger.error(f"Error in background scheduler worker: {e}", exc_info=True)
@@ -1221,7 +1272,9 @@ class ScheduleRequest(BaseModel):
 
 @app.post("/api/automation/schedule")
 async def update_schedule_endpoint(req: ScheduleRequest):
-    updated = update_user_schedule(req.email, req.email_time, req.daily_email)
+    clean_time = normalize_time_str(req.email_time)
+    updated = update_user_schedule(req.email, clean_time, req.daily_email)
+    clean_email = (req.email or "").strip().lower()
     
     # Update config.yaml for default scheduler fallback
     try:
@@ -1232,20 +1285,24 @@ async def update_schedule_endpoint(req: ScheduleRequest):
                 cfg = yaml.safe_load(f) or {}
             if "schedule" not in cfg:
                 cfg["schedule"] = {}
-            cfg["schedule"]["time"] = req.email_time
+            cfg["schedule"]["time"] = clean_time
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(cfg, f, sort_keys=False)
     except Exception as e:
         logger.warning(f"Could not update config.yaml: {e}")
 
-    # Clear last sent tracking for this user so they can test immediately if desired
+    # Clear memory cache and reset last_digest_date so that if candidate changed
+    # to current time or past time today, catch-up dispatches immediately
     global SCHEDULED_LAST_SENT
-    SCHEDULED_LAST_SENT = {k for k in SCHEDULED_LAST_SENT if not k.startswith(req.email.lower())}
+    SCHEDULED_LAST_SENT = {k for k in SCHEDULED_LAST_SENT if not k.startswith(clean_email)}
+    reset_user_digest_tracking(clean_email)
+    triggered = check_and_send_scheduled_digests()
 
     return {
         "status": "ok", 
         "user": updated, 
-        "message": f"Daily email digest scheduled for {req.email_time} every day!"
+        "message": f"Daily email digest scheduled for {clean_time} every day!",
+        "triggered_now": clean_email in triggered
     }
 
 # ------------------------------------------------------------------------------
@@ -1260,14 +1317,16 @@ class EmailSettingsUpdateRequest(BaseModel):
 
 @app.get("/api/ping")
 async def ping_endpoint():
-    """Keep-alive endpoint for cloud hosting services (Render, Railway, Fly)."""
+    """Keep-alive endpoint for cloud hosting services (Render, Railway, Fly). Also triggers any pending digests."""
     now_ist = datetime.now(IST)
+    triggered = check_and_send_scheduled_digests()
     return {
         "status": "alive",
         "service": "JobRadar AI 2.0",
         "current_time_ist": now_ist.strftime("%H:%M:%S"),
         "date_ist": now_ist.strftime("%Y-%m-%d"),
-        "timezone": "Asia/Kolkata (IST)"
+        "timezone": "Asia/Kolkata (IST)",
+        "pending_digests_triggered": triggered
     }
 
 @app.get("/api/automation/email-settings")
@@ -1277,6 +1336,26 @@ async def get_email_settings_endpoint():
     webhook_url = (os.getenv("EMAIL_WEBHOOK_URL") or get_system_setting("email_webhook_url") or "").strip()
     sender_email = (os.getenv("SENDER_EMAIL") or get_system_setting("sender_email") or "sharanujm@gmail.com").strip()
     has_smtp = bool(os.getenv("SENDER_APP_PASSWORD") or get_system_setting("sender_password") or get_system_setting("sender_app_password"))
+
+    # Fallback to email_credentials.json on disk if present
+    try:
+        cred_file = BASE_DIR / "email_credentials.json"
+        if cred_file.exists():
+            with open(cred_file, "r", encoding="utf-8") as f:
+                fcreds = json.load(f) or {}
+            if not resend_key:
+                resend_key = (fcreds.get("resend_api_key") or "").strip()
+            if not brevo_key:
+                brevo_key = (fcreds.get("brevo_api_key") or "").strip()
+            if not webhook_url:
+                webhook_url = (fcreds.get("email_webhook_url") or "").strip()
+            if not has_smtp:
+                has_smtp = bool(fcreds.get("sender_password") or fcreds.get("sender_app_password"))
+            if not sender_email or sender_email == "sharanujm@gmail.com":
+                sender_email = (fcreds.get("sender_email") or sender_email).strip()
+    except Exception:
+        pass
+
     is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
 
     active_method = "none"
@@ -1309,17 +1388,22 @@ async def get_email_settings_endpoint():
 @app.post("/api/automation/email-settings")
 async def update_email_settings_endpoint(req: EmailSettingsUpdateRequest):
     if req.resend_api_key is not None:
-        set_system_setting("resend_api_key", req.resend_api_key.strip())
+        val = req.resend_api_key.strip()
+        if val and not val.endswith("..."):
+            set_system_setting("resend_api_key", val)
     if req.brevo_api_key is not None:
-        set_system_setting("brevo_api_key", req.brevo_api_key.strip())
+        val = req.brevo_api_key.strip()
+        if val and not val.endswith("..."):
+            set_system_setting("brevo_api_key", val)
     if req.webhook_url is not None:
         set_system_setting("email_webhook_url", req.webhook_url.strip())
     if req.sender_email is not None and req.sender_email.strip():
         set_system_setting("sender_email", req.sender_email.strip())
     if req.sender_app_password is not None and req.sender_app_password.strip():
         clean_pass = req.sender_app_password.replace(" ", "").strip()
-        set_system_setting("sender_password", clean_pass)
-        set_system_setting("sender_app_password", clean_pass)
+        if clean_pass and not clean_pass.endswith("..."):
+            set_system_setting("sender_password", clean_pass)
+            set_system_setting("sender_app_password", clean_pass)
 
     return {"status": "ok", "message": "Email delivery settings saved successfully!"}
 

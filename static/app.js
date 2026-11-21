@@ -1807,33 +1807,7 @@ async function applyPreset(presetType) {
 // Automation & Daily Mail Agent
 // ------------------------------------------------------------------------------
 function handleScheduleTimeChange(timeVal) {
-    if (!timeVal) return;
-    localStorage.setItem("jobradar_scheduled_time", timeVal);
-    syncPipelineTimesPreview();
-
-    const sideSchedule = document.getElementById("sidebar-schedule-display");
-    if (sideSchedule) {
-        sideSchedule.textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
-    }
-
-    const email = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
-    if (email) {
-        fetch("/api/automation/schedule", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: email, email_time: timeVal, daily_email: true })
-        }).then(r => r.json()).then(data => {
-            if (data.status === "ok") {
-                if (state.currentUser) {
-                    state.currentUser.email_time = timeVal;
-                    localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
-                }
-                showToast(`⏰ Daily email alert scheduled for ${formatTimeTo12h(timeVal)}!`);
-            }
-        }).catch(err => console.warn("Auto-save schedule:", err));
-    } else {
-        showToast(`⏰ Scheduled time set to ${formatTimeTo12h(timeVal)}!`);
-    }
+    saveCustomScheduleTime();
 }
 
 function handleAutoEmailInput(emailVal) {
@@ -1983,6 +1957,17 @@ async function saveCustomScheduleTime() {
 
     localStorage.setItem("jobradar_scheduled_time", timeVal);
     localStorage.setItem("jobradar_user_email", emailVal);
+    if (state.currentUser) {
+        state.currentUser.email_time = timeVal;
+        state.currentUser.email = emailVal;
+        localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
+    }
+
+    const sideSchedule = document.getElementById("sidebar-schedule-display");
+    if (sideSchedule) sideSchedule.textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
+    const nextDigestEl = document.getElementById("pipeline-next-digest");
+    if (nextDigestEl) nextDigestEl.textContent = `${timeVal} (${formatTimeTo12h(timeVal)})`;
+
     showToast(`Setting daily email alert for ${emailVal} at ${formatTimeTo12h(timeVal)}...`);
 
     try {
@@ -1993,13 +1978,15 @@ async function saveCustomScheduleTime() {
         });
         const data = await res.json();
         if (data.status === "ok") {
-            if (state.currentUser) {
-                state.currentUser.email_time = timeVal;
-                state.currentUser.email = emailVal;
+            if (data.user && state.currentUser) {
+                state.currentUser = { ...state.currentUser, ...data.user };
                 localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
             }
-            document.getElementById("sidebar-schedule-display").textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
-            showToast(`⏰ 100-Job digest scheduled for ${formatTimeTo12h(timeVal)} daily to ${emailVal}!`);
+            if (data.triggered_now) {
+                showToast(`🚀 Scheduled time reached! 100-Job Digest is being emailed right now to ${emailVal}!`, 5000);
+            } else {
+                showToast(`⏰ 100-Job digest scheduled for ${formatTimeTo12h(timeVal)} daily to ${emailVal}!`);
+            }
             await loadPipelineStatus();
         } else {
             showToast(`⚠️ ${data.message || "Could not update schedule"}`);
