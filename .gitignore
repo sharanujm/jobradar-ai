@@ -14,6 +14,10 @@ __pycache__/
 # Database (uncomment to exclude)
 # jobs.db
 *.sqlite3
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
 
 # Logs and generated files
 *.log

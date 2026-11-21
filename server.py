@@ -294,10 +294,12 @@ def check_and_send_scheduled_digests() -> List[str]:
         today_date = now_ist.strftime("%Y-%m-%d")
 
         conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE daily_email = 1")
-        users = cursor.fetchall()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE daily_email = 1")
+            users = cursor.fetchall()
+        finally:
+            conn.close()
 
         for row in users:
             u = dict(row)
@@ -355,10 +357,12 @@ async def background_scheduler_worker():
             today_date = now_ist.strftime("%Y-%m-%d")
 
             conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE daily_email = 1")
-            users = cursor.fetchall()
-            conn.close()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE daily_email = 1")
+                users = cursor.fetchall()
+            finally:
+                conn.close()
 
             lead_min = int(SCAN_STATE.get("lead_minutes", 30))
             active_scrape_times = []
@@ -399,7 +403,7 @@ async def on_startup():
     try:
         from src.database import init_db, backfill_jobs_experience
         init_db()
-        asyncio.create_task(asyncio.to_thread(backfill_jobs_experience, force=True))
+        asyncio.create_task(asyncio.to_thread(backfill_jobs_experience, force=False))
     except Exception as e:
         logger.error(f"Startup experience backfill error: {e}")
     asyncio.create_task(background_scheduler_worker())

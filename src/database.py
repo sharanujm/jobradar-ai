@@ -9,8 +9,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "jobs.db"
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(str(db_path), timeout=60.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA busy_timeout = 60000;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
 def init_db(db_path: Path = DB_PATH) -> None:
@@ -176,34 +179,37 @@ def init_db(db_path: Path = DB_PATH) -> None:
 def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> int:
     """Calculates and stores min_exp, max_exp, and exp_category for existing jobs."""
     conn = get_connection(db_path)
-    cursor = conn.cursor()
-    if force:
-        cursor.execute("SELECT id, title, snippet, job_url FROM jobs")
-    else:
-        cursor.execute("SELECT id, title, snippet, job_url FROM jobs WHERE min_exp IS NULL OR exp_category IS NULL")
-    rows = cursor.fetchall()
-    if not rows:
-        conn.close()
-        return 0
+    try:
+        cursor = conn.cursor()
+        if force:
+            cursor.execute("SELECT id, title, snippet, job_url FROM jobs")
+        else:
+            cursor.execute("SELECT id, title, snippet, job_url FROM jobs WHERE min_exp IS NULL OR exp_category IS NULL")
+        rows = cursor.fetchall()
+        if not rows:
+            return 0
 
-    from .filter import parse_job_experience
-    updated = 0
-    batch = []
-    for r in rows:
-        min_e, max_e, cat = parse_job_experience(r["title"], r["snippet"], r["job_url"])
-        batch.append((min_e, max_e, cat, r["id"]))
-        if len(batch) >= 500:
+        from .filter import parse_job_experience
+        import time
+        updated = 0
+        batch = []
+        for r in rows:
+            min_e, max_e, cat = parse_job_experience(r["title"], r["snippet"], r["job_url"])
+            batch.append((min_e, max_e, cat, r["id"]))
+            if len(batch) >= 100:
+                cursor.executemany("UPDATE jobs SET min_exp = ?, max_exp = ?, exp_category = ? WHERE id = ?", batch)
+                conn.commit()
+                updated += len(batch)
+                batch = []
+                time.sleep(0.005)
+        if batch:
             cursor.executemany("UPDATE jobs SET min_exp = ?, max_exp = ?, exp_category = ? WHERE id = ?", batch)
             conn.commit()
             updated += len(batch)
-            batch = []
-    if batch:
-        cursor.executemany("UPDATE jobs SET min_exp = ?, max_exp = ?, exp_category = ? WHERE id = ?", batch)
-        conn.commit()
-        updated += len(batch)
 
-    conn.close()
-    return updated
+        return updated
+    finally:
+        conn.close()
 
 def generate_job_id(site: str, title: str, company: str, job_url: str) -> str:
     """Generate a consistent unique identifier for deduplication."""
@@ -572,8 +578,6 @@ def get_jobs_list(
         WHERE {where_clause}
     """
     count_params = [clean_email] + params
-    cursor.execute(count_sql, count_params)
-    total_count = cursor.fetchone()[0]
 
     # Fetch rows
     fetch_sql = f"""
@@ -585,8 +589,16 @@ def get_jobs_list(
         LIMIT ? OFFSET ?
     """
     fetch_params = [clean_email] + params + [limit, offset]
-    cursor.execute(fetch_sql, fetch_params)
-    rows = cursor.fetchall()
+
+    try:
+        cursor.execute(count_sql, count_params)
+        total_count = cursor.fetchone()[0]
+
+        cursor.execute(fetch_sql, fetch_params)
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
     from .filter import get_job_experience_badge, matches_experience_filter
     jobs = []
     for row in rows:
@@ -596,7 +608,6 @@ def get_jobs_list(
             continue
         jd["exp_badge"] = get_job_experience_badge(jd)
         jobs.append(jd)
-    conn.close()
 
     return jobs, total_count
 
