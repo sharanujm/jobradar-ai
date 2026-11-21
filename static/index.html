@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobRadar AI &bull; Intelligent Job Search, Resume Studio & Application Agent</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.5">
+    <link rel="stylesheet" href="/static/styles.css?v=3.6">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
 </head>
 <body>
@@ -1047,18 +1047,22 @@
                             </div>
                         </div>
 
-                        <div style="display: flex; gap: 12px; margin-top: 24px; padding-top:16px; border-top:1px solid var(--border-subtle); flex-wrap: wrap;">
+                        <div style="display: flex; gap: 12px; margin-top: 24px; padding-top:16px; border-top:1px solid var(--border-subtle); flex-wrap: wrap; align-items: center;">
                             <button class="btn btn-secondary" onclick="sendEmailDigestNow()">
                                 <span>&#9993;</span> Send 100-Job Digest to Mail Right Now
                             </button>
                             <button class="btn btn-secondary" onclick="window.open('/latest_digest.html', '_blank')">
                                 <span>&#128065;</span> View Browser HTML Preview (100 Jobs)
                             </button>
+                            <!-- Discreet Admin Settings Toggle (Only visible to admin) -->
+                            <button id="btn-admin-config-toggle" class="btn btn-secondary btn-sm" style="display:none; margin-left:auto; font-size:11px; opacity:0.75;" onclick="toggleAdminEmailConfig()">
+                                <span>⚙️ Server Email Configuration</span>
+                            </button>
                         </div>
                     </div>
 
-                    <!-- CARD 3: CLOUD EMAIL DELIVERY (RENDER FREE TIER HTTPS SETUP) -->
-                    <div style="background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: 28px; box-shadow: var(--shadow-sm); margin-top: 24px;">
+                    <!-- CARD 3: CLOUD EMAIL DELIVERY (ADMIN CONFIGURATION ONLY - HIDDEN FROM REGULAR USERS) -->
+                    <div id="card-cloud-email-settings" style="display:none; background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-xl); padding: 28px; box-shadow: var(--shadow-sm); margin-top: 24px;">
                         <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding-bottom: 16px; margin-bottom: 20px;">
                             <div>
                                 <h3 style="font-size: 18px; font-weight: 700; margin: 0; display:flex; align-items:center; gap:8px;">
@@ -2822,6 +2826,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=3.5"></script>
+<script src="/static/app.js?v=3.6"></script>
 </body>
 </html>

@@ -20,3 +20,4 @@ jobs:
           else
             echo "⚠️ Ping received status $STATUS - server was awakened from standby."
           fi
+

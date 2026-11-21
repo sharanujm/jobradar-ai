@@ -616,8 +616,17 @@ function renderUserHeader() {
         if (headerUserBtn) {
             headerUserBtn.title = `Signed in as ${u.email}. Click to manage account.`;
         }
+
+        // Show Admin Email Server Configuration only for the owner/admin
+        const isAdmin = u && (u.email.toLowerCase() === 'sharanujm@gmail.com' || u.email.toLowerCase() === 'sharanujm10@gmail.com');
+        const adminBtn = document.getElementById("btn-admin-config-toggle");
+        if (adminBtn) adminBtn.style.display = isAdmin ? "inline-flex" : "none";
     } else {
         // Guest / Signed Out State
+        const adminBtn = document.getElementById("btn-admin-config-toggle");
+        if (adminBtn) adminBtn.style.display = "none";
+        const adminCard = document.getElementById("card-cloud-email-settings");
+        if (adminCard) adminCard.style.display = "none";
         if (userNameEl) userNameEl.textContent = "Guest";
         if (heroNameEl) heroNameEl.textContent = "Guest";
         if (userAvatarEl) userAvatarEl.textContent = "👤";
@@ -2153,6 +2162,17 @@ async function sendEmailDigestNow() {
             diag.style.background = "rgba(239, 68, 68, 0.1)";
             diag.innerHTML = `❌ <strong>Network Error:</strong> ${e.message}`;
         }
+    }
+}
+
+function toggleAdminEmailConfig() {
+    const card = document.getElementById("card-cloud-email-settings");
+    if (!card) return;
+    const isHidden = card.style.display === "none" || !card.style.display;
+    card.style.display = isHidden ? "block" : "none";
+    if (isHidden) {
+        loadEmailSettings();
+        card.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 }
 
