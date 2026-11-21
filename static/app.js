@@ -988,81 +988,146 @@ function debounceFetchJobs() {
 
 function setLocationFilter(el) {
     const val = el.getAttribute("data-value") || "all";
-    state.filters.location = val;
-    document.querySelectorAll('[data-filter="location"]').forEach(p => p.classList.remove("active"));
-    el.classList.add("active");
     const locInp = document.getElementById("filter-location");
-    if (locInp) locInp.value = val === "all" ? "" : val;
 
-    // Sync active state on suggestion chips
-    document.querySelectorAll(".suggestion-chip").forEach(chip => {
-        if (val !== "all" && chip.textContent.toLowerCase().includes(val.toLowerCase())) {
-            chip.classList.add("active");
+    if (val === "all") {
+        // Clear all specific locations, activate "All Cities"
+        document.querySelectorAll('[data-filter="location"]').forEach(p => p.classList.remove("active"));
+        document.querySelectorAll('.suggestion-chip').forEach(c => c.classList.remove("active"));
+        el.classList.add("active");
+        state.filters.location = "all";
+        if (locInp) locInp.value = "";
+    } else {
+        // Deactivate "All Cities"
+        const allLocPill = document.querySelector('[data-filter="location"][data-value="all"]');
+        if (allLocPill) allLocPill.classList.remove("active");
+
+        // Toggle this pill
+        el.classList.toggle("active");
+
+        // Gather all currently active locations
+        const activePills = Array.from(document.querySelectorAll('[data-filter="location"].active'))
+            .filter(p => p.getAttribute("data-value") !== "all");
+
+        const activeVals = activePills.map(p => p.getAttribute("data-value"));
+
+        // Sync suggestion chips
+        document.querySelectorAll('.suggestion-chip').forEach(chip => {
+            const chipText = chip.textContent.toLowerCase();
+            const isActive = activeVals.some(v => chipText.includes(v.toLowerCase()));
+            if (isActive) chip.classList.add("active");
+            else chip.classList.remove("active");
+        });
+
+        if (activeVals.length === 0) {
+            if (allLocPill) allLocPill.classList.add("active");
+            state.filters.location = "all";
+            if (locInp) locInp.value = "";
         } else {
-            chip.classList.remove("active");
+            state.filters.location = activeVals.join(",");
+            if (locInp) {
+                locInp.value = activePills.map(p => p.textContent.replace(/^📍\s*|🌐\s*/, '').trim()).join(", ");
+            }
         }
-    });
-
+    }
     fetchJobs(true);
 }
 
 function applyLocationSuggestion(locName) {
-    const locInp = document.getElementById("filter-location");
-    if (locInp) locInp.value = locName;
     const lower = locName.toLowerCase();
-    state.filters.location = lower;
-
-    // Highlight matching pill if exists, or remove active from other pills
-    let foundPill = false;
+    let targetPill = null;
     document.querySelectorAll('[data-filter="location"]').forEach(p => {
         const val = (p.getAttribute("data-value") || "").toLowerCase();
-        if (val === lower || (lower === "remote" && val === "remote") || (lower === "bangalore" && val === "bangalore") || (lower === "delhi ncr" && val === "delhi") || (lower === "kochi" && val === "kochi")) {
-            p.classList.add("active");
-            foundPill = true;
-        } else {
-            p.classList.remove("active");
+        if (val === lower || (lower === "bangalore" && val === "bangalore") || (lower === "delhi ncr" && val === "delhi") || (lower === "remote" && val === "remote")) {
+            targetPill = p;
         }
     });
-    if (!foundPill) {
-        document.querySelectorAll('[data-filter="location"]').forEach(p => p.classList.remove("active"));
+    if (targetPill) {
+        setLocationFilter(targetPill);
+    } else {
+        const locInp = document.getElementById("filter-location");
+        if (locInp) {
+            const current = locInp.value.trim();
+            locInp.value = current ? `${current}, ${locName}` : locName;
+            state.filters.location = locInp.value;
+            fetchJobs(true);
+        }
     }
-
-    // Toggle active state on suggestion chips
-    document.querySelectorAll(".suggestion-chip").forEach(chip => {
-        if (chip.textContent.toLowerCase().includes(lower)) {
-            chip.classList.add("active");
-        } else {
-            chip.classList.remove("active");
-        }
-    });
-
-    fetchJobs(true);
 }
 
 function setFilter(el) {
     const filterType = el.getAttribute("data-filter");
     const value = el.getAttribute("data-value");
 
-    el.parentElement.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
-    el.classList.add("active");
+    if (value === "all") {
+        // Clear all specific selections, activate "All"
+        document.querySelectorAll(`[data-filter="${filterType}"]`).forEach(p => p.classList.remove("active"));
+        el.classList.add("active");
+        state.filters[filterType] = "all";
+    } else {
+        // Deactivate the "All" pill
+        const allPill = document.querySelector(`[data-filter="${filterType}"][data-value="all"]`);
+        if (allPill) allPill.classList.remove("active");
 
-    state.filters[filterType] = value;
+        // Toggle this specific pill
+        el.classList.toggle("active");
+
+        // Gather all currently active values
+        const activePills = Array.from(document.querySelectorAll(`[data-filter="${filterType}"].active`))
+            .filter(p => p.getAttribute("data-value") !== "all");
+
+        if (activePills.length === 0) {
+            // Nothing selected: fallback to "All"
+            if (allPill) allPill.classList.add("active");
+            state.filters[filterType] = "all";
+        } else {
+            state.filters[filterType] = activePills.map(p => p.getAttribute("data-value")).join(",");
+        }
+    }
     fetchJobs(true);
 }
 
 function setDateFilter(el) {
     const val = el.getAttribute("data-value") || "";
-    state.filters.posted_within = val;
-    document.querySelectorAll('[data-filter="posted_within"]').forEach(p => p.classList.remove("active"));
-    el.classList.add("active");
+    if (el.classList.contains("active") && val !== "") {
+        document.querySelectorAll('[data-filter="posted_within"]').forEach(p => p.classList.remove("active"));
+        const anytimePill = document.querySelector('[data-filter="posted_within"][data-value=""]');
+        if (anytimePill) anytimePill.classList.add("active");
+        state.filters.posted_within = "";
+    } else {
+        document.querySelectorAll('[data-filter="posted_within"]').forEach(p => p.classList.remove("active"));
+        el.classList.add("active");
+        state.filters.posted_within = val;
+    }
     fetchJobs(true);
 }
 
 function setSkillTagFilter(el) {
     const val = el.getAttribute("data-value") || "";
-    state.filters.skill_tag = val;
-    document.querySelectorAll('[data-filter="skill_tag"]').forEach(p => p.classList.remove("active"));
-    el.classList.add("active");
+
+    if (val === "") {
+        // Clear all specific skills, activate "All Tech"
+        document.querySelectorAll('[data-filter="skill_tag"]').forEach(p => p.classList.remove("active"));
+        el.classList.add("active");
+        state.filters.skill_tag = "";
+    } else {
+        // Deactivate "All Tech"
+        const allTechPill = document.querySelector('[data-filter="skill_tag"][data-value=""]');
+        if (allTechPill) allTechPill.classList.remove("active");
+
+        // Toggle this skill
+        el.classList.toggle("active");
+
+        const activePills = Array.from(document.querySelectorAll('[data-filter="skill_tag"].active'))
+            .filter(p => p.getAttribute("data-value") !== "");
+
+        if (activePills.length === 0) {
+            if (allTechPill) allTechPill.classList.add("active");
+            state.filters.skill_tag = "";
+        } else {
+            state.filters.skill_tag = activePills.map(p => p.getAttribute("data-value")).join(",");
+        }
+    }
     fetchJobs(true);
 }
 

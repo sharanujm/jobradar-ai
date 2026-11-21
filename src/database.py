@@ -437,47 +437,56 @@ def get_jobs_list(
         conditions.append("(LOWER(j.title) LIKE ? OR LOWER(j.company) LIKE ? OR LOWER(j.snippet) LIKE ? OR LOWER(j.location) LIKE ?)")
         params.extend([s, s, s, s])
 
-    # 2. Location Filtering
+    # 2. Location Filtering (supports single or comma-separated multiple cities)
     if location and location.strip().lower() not in ("all", "any", "all locations", "all cities"):
-        loc_clean = location.strip().lower()
-        if loc_clean in ("remote", "work from home", "wfh"):
-            conditions.append("(j.is_remote = 1 OR LOWER(j.location) LIKE '%remote%' OR LOWER(j.title) LIKE '%remote%' OR LOWER(j.location) LIKE '%work from home%')")
-        elif loc_clean in ("bangalore", "bengaluru", "karnataka"):
-            conditions.append("(LOWER(j.location) LIKE '%bangalore%' OR LOWER(j.location) LIKE '%bengaluru%' OR LOWER(j.location) LIKE '%ka, in%' OR LOWER(j.location) LIKE '%karnataka%')")
-        elif loc_clean in ("hyderabad", "telangana"):
-            conditions.append("(LOWER(j.location) LIKE '%hyderabad%' OR LOWER(j.location) LIKE '%hyderābād%' OR LOWER(j.location) LIKE '%ts, in%' OR LOWER(j.location) LIKE '%telangana%')")
-        elif loc_clean in ("pune", "maharashtra"):
-            conditions.append("(LOWER(j.location) LIKE '%pune%' OR LOWER(j.location) LIKE '%pune division%')")
-        elif loc_clean in ("chennai", "tamil nadu"):
-            conditions.append("(LOWER(j.location) LIKE '%chennai%' OR LOWER(j.location) LIKE '%tn, in%' OR LOWER(j.location) LIKE '%tamil nadu%')")
-        elif loc_clean in ("delhi", "ncr", "gurgaon", "gurugram", "noida", "haryana"):
-            conditions.append("(LOWER(j.location) LIKE '%delhi%' OR LOWER(j.location) LIKE '%ncr%' OR LOWER(j.location) LIKE '%gurgaon%' OR LOWER(j.location) LIKE '%gurugram%' OR LOWER(j.location) LIKE '%noida%' OR LOWER(j.location) LIKE '%dl, in%' OR LOWER(j.location) LIKE '%haryana%')")
-        elif loc_clean in ("mumbai", "navi mumbai"):
-            conditions.append("(LOWER(j.location) LIKE '%mumbai%' OR LOWER(j.location) LIKE '%navi mumbai%' OR LOWER(j.location) LIKE '%bombay%' OR LOWER(j.location) LIKE '%thane%')")
-        elif loc_clean in ("kolkata", "calcutta", "west bengal"):
-            conditions.append("(LOWER(j.location) LIKE '%kolkata%' OR LOWER(j.location) LIKE '%calcutta%' OR LOWER(j.location) LIKE '%wb, in%' OR LOWER(j.location) LIKE '%west bengal%')")
-        elif loc_clean in ("ahmedabad", "gujarat"):
-            conditions.append("(LOWER(j.location) LIKE '%ahmedabad%' OR LOWER(j.location) LIKE '%gj, in%' OR LOWER(j.location) LIKE '%gujarat%' OR LOWER(j.location) LIKE '%gandhinagar%')")
-        elif loc_clean in ("kochi", "cochin", "kerala", "trivandrum", "thiruvananthapuram"):
-            conditions.append("(LOWER(j.location) LIKE '%kochi%' OR LOWER(j.location) LIKE '%cochin%' OR LOWER(j.location) LIKE '%trivandrum%' OR LOWER(j.location) LIKE '%thiruvananthapuram%' OR LOWER(j.location) LIKE '%kl, in%' OR LOWER(j.location) LIKE '%kerala%')")
-        elif loc_clean in ("indore", "bhopal", "madhya pradesh"):
-            conditions.append("(LOWER(j.location) LIKE '%indore%' OR LOWER(j.location) LIKE '%bhopal%' OR LOWER(j.location) LIKE '%mp, in%' OR LOWER(j.location) LIKE '%madhya pradesh%')")
-        elif loc_clean in ("jaipur", "rajasthan"):
-            conditions.append("(LOWER(j.location) LIKE '%jaipur%' OR LOWER(j.location) LIKE '%rj, in%' OR LOWER(j.location) LIKE '%rajasthan%')")
-        elif loc_clean in ("coimbatore",):
-            conditions.append("(LOWER(j.location) LIKE '%coimbatore%' OR LOWER(j.location) LIKE '%tn, in%')")
-        elif loc_clean in ("chandigarh", "mohali", "punjab"):
-            conditions.append("(LOWER(j.location) LIKE '%chandigarh%' OR LOWER(j.location) LIKE '%mohali%' OR LOWER(j.location) LIKE '%pb, in%' OR LOWER(j.location) LIKE '%punjab%')")
-        elif loc_clean in ("bhubaneswar", "odisha"):
-            conditions.append("(LOWER(j.location) LIKE '%bhubaneswar%' OR LOWER(j.location) LIKE '%or, in%' OR LOWER(j.location) LIKE '%odisha%')")
-        else:
-            conditions.append("LOWER(j.location) LIKE ?")
-            params.append(f"%{loc_clean}%")
+        loc_items = [l.strip().lower() for l in location.split(",") if l.strip() and l.strip().lower() not in ("all", "any", "all locations", "all cities")]
+        if loc_items:
+            loc_clauses = []
+            for loc_clean in loc_items:
+                if loc_clean in ("remote", "work from home", "wfh"):
+                    loc_clauses.append("(j.is_remote = 1 OR LOWER(j.location) LIKE '%remote%' OR LOWER(j.title) LIKE '%remote%' OR LOWER(j.location) LIKE '%work from home%')")
+                elif loc_clean in ("bangalore", "bengaluru", "karnataka"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%bangalore%' OR LOWER(j.location) LIKE '%bengaluru%' OR LOWER(j.location) LIKE '%ka, in%' OR LOWER(j.location) LIKE '%karnataka%')")
+                elif loc_clean in ("hyderabad", "telangana"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%hyderabad%' OR LOWER(j.location) LIKE '%hyderābād%' OR LOWER(j.location) LIKE '%ts, in%' OR LOWER(j.location) LIKE '%telangana%')")
+                elif loc_clean in ("pune", "maharashtra"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%pune%' OR LOWER(j.location) LIKE '%pune division%')")
+                elif loc_clean in ("chennai", "tamil nadu"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%chennai%' OR LOWER(j.location) LIKE '%tn, in%' OR LOWER(j.location) LIKE '%tamil nadu%')")
+                elif loc_clean in ("delhi", "ncr", "gurgaon", "gurugram", "noida", "haryana"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%delhi%' OR LOWER(j.location) LIKE '%ncr%' OR LOWER(j.location) LIKE '%gurgaon%' OR LOWER(j.location) LIKE '%gurugram%' OR LOWER(j.location) LIKE '%noida%' OR LOWER(j.location) LIKE '%dl, in%' OR LOWER(j.location) LIKE '%haryana%')")
+                elif loc_clean in ("mumbai", "navi mumbai"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%mumbai%' OR LOWER(j.location) LIKE '%navi mumbai%' OR LOWER(j.location) LIKE '%bombay%' OR LOWER(j.location) LIKE '%thane%')")
+                elif loc_clean in ("kolkata", "calcutta", "west bengal"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%kolkata%' OR LOWER(j.location) LIKE '%calcutta%' OR LOWER(j.location) LIKE '%wb, in%' OR LOWER(j.location) LIKE '%west bengal%')")
+                elif loc_clean in ("ahmedabad", "gujarat"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%ahmedabad%' OR LOWER(j.location) LIKE '%gj, in%' OR LOWER(j.location) LIKE '%gujarat%' OR LOWER(j.location) LIKE '%gandhinagar%')")
+                elif loc_clean in ("kochi", "cochin", "kerala", "trivandrum", "thiruvananthapuram"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%kochi%' OR LOWER(j.location) LIKE '%cochin%' OR LOWER(j.location) LIKE '%trivandrum%' OR LOWER(j.location) LIKE '%thiruvananthapuram%' OR LOWER(j.location) LIKE '%kl, in%' OR LOWER(j.location) LIKE '%kerala%')")
+                elif loc_clean in ("indore", "bhopal", "madhya pradesh"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%indore%' OR LOWER(j.location) LIKE '%bhopal%' OR LOWER(j.location) LIKE '%mp, in%' OR LOWER(j.location) LIKE '%madhya pradesh%')")
+                elif loc_clean in ("jaipur", "rajasthan"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%jaipur%' OR LOWER(j.location) LIKE '%rj, in%' OR LOWER(j.location) LIKE '%rajasthan%')")
+                elif loc_clean in ("coimbatore",):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%coimbatore%' OR LOWER(j.location) LIKE '%tn, in%')")
+                elif loc_clean in ("chandigarh", "mohali", "punjab"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%chandigarh%' OR LOWER(j.location) LIKE '%mohali%' OR LOWER(j.location) LIKE '%pb, in%' OR LOWER(j.location) LIKE '%punjab%')")
+                elif loc_clean in ("bhubaneswar", "odisha"):
+                    loc_clauses.append("(LOWER(j.location) LIKE '%bhubaneswar%' OR LOWER(j.location) LIKE '%or, in%' OR LOWER(j.location) LIKE '%odisha%')")
+                else:
+                    loc_clauses.append("LOWER(j.location) LIKE ?")
+                    params.append(f"%{loc_clean}%")
+            if loc_clauses:
+                conditions.append(f"({' OR '.join(loc_clauses)})")
 
     if skill_tag:
-        st = f"%{skill_tag.strip().lower()}%"
-        conditions.append("(LOWER(j.title) LIKE ? OR LOWER(j.snippet) LIKE ?)")
-        params.extend([st, st])
+        tag_items = [t.strip().lower() for t in skill_tag.split(",") if t.strip()]
+        if tag_items:
+            tag_clauses = []
+            for st in tag_items:
+                tag_clauses.append("(LOWER(j.title) LIKE ? OR LOWER(j.snippet) LIKE ?)")
+                params.extend([f"%{st}%", f"%{st}%"])
+            conditions.append(f"({' OR '.join(tag_clauses)})")
 
     if posted_within == "24h":
         conditions.append("datetime(j.created_at) >= datetime('now', '-1 day')")
@@ -486,58 +495,67 @@ def get_jobs_list(
     elif posted_within == "7d":
         conditions.append("datetime(j.created_at) >= datetime('now', '-7 days')")
 
-    if site and site.lower() != "all":
-        s_lower = site.strip().lower()
-        if s_lower == "google":
-            conditions.append("(LOWER(j.site) LIKE '%google%' OR LOWER(j.job_url) LIKE '%greenhouse%' OR LOWER(j.job_url) LIKE '%lever%' OR LOWER(j.job_url) LIKE '%workday%' OR LOWER(j.job_url) LIKE '%careers%' OR LOWER(j.site) LIKE '%company%' OR LOWER(j.site) LIKE '%web%')")
-        elif s_lower in ("internshala", "naukri", "linkedin", "indeed", "glassdoor"):
-            conditions.append("LOWER(j.site) = ?")
-            params.append(s_lower)
-        else:
-            conditions.append("LOWER(j.site) = ?")
-            params.append(s_lower)
+    if site and site.strip().lower() != "all":
+        site_items = [s.strip().lower() for s in site.split(",") if s.strip() and s.strip().lower() != "all"]
+        if site_items:
+            site_clauses = []
+            for s_lower in site_items:
+                if s_lower == "google":
+                    site_clauses.append("(LOWER(j.site) LIKE '%google%' OR LOWER(j.job_url) LIKE '%greenhouse%' OR LOWER(j.job_url) LIKE '%lever%' OR LOWER(j.job_url) LIKE '%workday%' OR LOWER(j.job_url) LIKE '%careers%' OR LOWER(j.site) LIKE '%company%' OR LOWER(j.site) LIKE '%web%')")
+                else:
+                    site_clauses.append("LOWER(j.site) = ?")
+                    params.append(s_lower)
+            if site_clauses:
+                conditions.append(f"({' OR '.join(site_clauses)})")
 
     if is_remote is True:
         conditions.append("j.is_remote = 1")
 
-    # 3. Strict Experience Boundaries
-    if experience in ("1_year", "junior"):
-        conditions.append("""(
-            (j.exp_category = '1_year' OR (j.min_exp IS NOT NULL AND j.min_exp <= 2.0))
-            AND (j.min_exp IS NULL OR j.min_exp < 2.5)
-            AND (j.exp_category IS NULL OR j.exp_category NOT IN ('mid', 'senior'))
-            AND LOWER(j.snippet) NOT LIKE '%3-6%' AND LOWER(j.snippet) NOT LIKE '%3 - 6%' AND LOWER(j.snippet) NOT LIKE '%3 to 6%'
-            AND LOWER(j.snippet) NOT LIKE '%3+ years%' AND LOWER(j.snippet) NOT LIKE '%4+ years%' AND LOWER(j.snippet) NOT LIKE '%5+ years%'
-            AND LOWER(j.snippet) NOT LIKE '%8+ years%' AND LOWER(j.snippet) NOT LIKE '%5–15%'
-            AND LOWER(j.title) NOT LIKE '%senior%' AND LOWER(j.title) NOT LIKE '%lead%' AND LOWER(j.title) NOT LIKE '%staff%' AND LOWER(j.title) NOT LIKE '%principal%'
-            AND LOWER(j.title) NOT LIKE '% sde 2%' AND LOWER(j.title) NOT LIKE '% sde-2%' AND LOWER(j.title) NOT LIKE '% sde ii%'
-            AND LOWER(j.title) NOT LIKE '% sde 3%' AND LOWER(j.title) NOT LIKE '% sde-3%'
-            AND LOWER(j.job_url) NOT LIKE '%-3-to-%' AND LOWER(j.job_url) NOT LIKE '%-4-to-%' AND LOWER(j.job_url) NOT LIKE '%-5-to-%'
-            AND LOWER(j.job_url) NOT LIKE '%-6-to-%' AND LOWER(j.job_url) NOT LIKE '%-7-to-%' AND LOWER(j.job_url) NOT LIKE '%-8-to-%'
-            AND LOWER(j.job_url) NOT LIKE '%-9-to-%' AND LOWER(j.job_url) NOT LIKE '%-10-to-%'
-        )""")
-    elif experience == "fresher":
-        conditions.append("""(
-            (j.exp_category = 'fresher' OR j.min_exp = 0.0)
-            AND (j.min_exp IS NULL OR j.min_exp <= 1.0)
-            AND (j.exp_category IS NULL OR j.exp_category NOT IN ('mid', 'senior'))
-            AND LOWER(j.title) NOT LIKE '%senior%' AND LOWER(j.title) NOT LIKE '%lead%'
-            AND LOWER(j.snippet) NOT LIKE '%3-6%' AND LOWER(j.snippet) NOT LIKE '%2+%' AND LOWER(j.snippet) NOT LIKE '%3+%'
-            AND LOWER(j.job_url) NOT LIKE '%-2-to-%' AND LOWER(j.job_url) NOT LIKE '%-3-to-%' AND LOWER(j.job_url) NOT LIKE '%-4-to-%'
-            AND LOWER(j.job_url) NOT LIKE '%-5-to-%' AND LOWER(j.job_url) NOT LIKE '%-6-to-%' AND LOWER(j.job_url) NOT LIKE '%-7-to-%'
-        )""")
-    elif experience == "mid":
-        conditions.append("""(
-            j.exp_category = 'mid'
-            OR (j.min_exp >= 2.5 AND j.min_exp < 5.0)
-            OR LOWER(j.title) LIKE '%sde 2%' OR LOWER(j.title) LIKE '%sde-2%' OR LOWER(j.title) LIKE '%sde ii%'
-        )""")
-    elif experience == "senior":
-        conditions.append("""(
-            j.exp_category = 'senior'
-            OR j.min_exp >= 5.0
-            OR LOWER(j.title) LIKE '%senior%' OR LOWER(j.title) LIKE '%lead%' OR LOWER(j.title) LIKE '%staff%' OR LOWER(j.title) LIKE '%principal%' OR LOWER(j.title) LIKE '%architect%'
-        )""")
+    # 3. Strict Experience Boundaries (supports multiple selections, e.g. "1_year,fresher")
+    if experience and experience.strip().lower() != "all":
+        exp_items = [e.strip().lower() for e in experience.split(",") if e.strip() and e.strip().lower() != "all"]
+        if exp_items:
+            exp_clauses = []
+            for exp_val in exp_items:
+                if exp_val in ("1_year", "junior"):
+                    exp_clauses.append("""(
+                        (j.exp_category = '1_year' OR (j.min_exp IS NOT NULL AND j.min_exp <= 2.0))
+                        AND (j.min_exp IS NULL OR j.min_exp < 2.5)
+                        AND (j.exp_category IS NULL OR j.exp_category NOT IN ('mid', 'senior'))
+                        AND LOWER(j.snippet) NOT LIKE '%3-6%' AND LOWER(j.snippet) NOT LIKE '%3 - 6%' AND LOWER(j.snippet) NOT LIKE '%3 to 6%'
+                        AND LOWER(j.snippet) NOT LIKE '%3+ years%' AND LOWER(j.snippet) NOT LIKE '%4+ years%' AND LOWER(j.snippet) NOT LIKE '%5+ years%'
+                        AND LOWER(j.snippet) NOT LIKE '%8+ years%' AND LOWER(j.snippet) NOT LIKE '%5–15%'
+                        AND LOWER(j.title) NOT LIKE '%senior%' AND LOWER(j.title) NOT LIKE '%lead%' AND LOWER(j.title) NOT LIKE '%staff%' AND LOWER(j.title) NOT LIKE '%principal%'
+                        AND LOWER(j.title) NOT LIKE '% sde 2%' AND LOWER(j.title) NOT LIKE '% sde-2%' AND LOWER(j.title) NOT LIKE '% sde ii%'
+                        AND LOWER(j.title) NOT LIKE '% sde 3%' AND LOWER(j.title) NOT LIKE '% sde-3%'
+                        AND LOWER(j.job_url) NOT LIKE '%-3-to-%' AND LOWER(j.job_url) NOT LIKE '%-4-to-%' AND LOWER(j.job_url) NOT LIKE '%-5-to-%'
+                        AND LOWER(j.job_url) NOT LIKE '%-6-to-%' AND LOWER(j.job_url) NOT LIKE '%-7-to-%' AND LOWER(j.job_url) NOT LIKE '%-8-to-%'
+                        AND LOWER(j.job_url) NOT LIKE '%-9-to-%' AND LOWER(j.job_url) NOT LIKE '%-10-to-%'
+                    )""")
+                elif exp_val == "fresher":
+                    exp_clauses.append("""(
+                        (j.exp_category = 'fresher' OR j.min_exp = 0.0)
+                        AND (j.min_exp IS NULL OR j.min_exp <= 1.0)
+                        AND (j.exp_category IS NULL OR j.exp_category NOT IN ('mid', 'senior'))
+                        AND LOWER(j.title) NOT LIKE '%senior%' AND LOWER(j.title) NOT LIKE '%lead%'
+                        AND LOWER(j.snippet) NOT LIKE '%3-6%' AND LOWER(j.snippet) NOT LIKE '%2+%' AND LOWER(j.snippet) NOT LIKE '%3+%'
+                        AND LOWER(j.job_url) NOT LIKE '%-2-to-%' AND LOWER(j.job_url) NOT LIKE '%-3-to-%' AND LOWER(j.job_url) NOT LIKE '%-4-to-%'
+                        AND LOWER(j.job_url) NOT LIKE '%-5-to-%' AND LOWER(j.job_url) NOT LIKE '%-6-to-%' AND LOWER(j.job_url) NOT LIKE '%-7-to-%'
+                    )""")
+                elif exp_val == "mid":
+                    exp_clauses.append("""(
+                        j.exp_category = 'mid'
+                        OR (j.min_exp >= 2.5 AND j.min_exp < 5.0)
+                        OR LOWER(j.title) LIKE '%sde 2%' OR LOWER(j.title) LIKE '%sde-2%' OR LOWER(j.title) LIKE '%sde ii%'
+                    )""")
+                elif exp_val == "senior":
+                    exp_clauses.append("""(
+                        j.exp_category = 'senior'
+                        OR j.min_exp >= 5.0
+                        OR LOWER(j.title) LIKE '%senior%' OR LOWER(j.title) LIKE '%lead%' OR LOWER(j.title) LIKE '%staff%' OR LOWER(j.title) LIKE '%principal%' OR LOWER(j.title) LIKE '%architect%'
+                    )""")
+            if exp_clauses:
+                conditions.append(f"({' OR '.join(exp_clauses)})")
 
     # Status filter (saved, applied, interviewing, offered)
     if status_filter and user_email:
