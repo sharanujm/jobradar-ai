@@ -164,9 +164,9 @@ def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> in
     conn = get_connection(db_path)
     cursor = conn.cursor()
     if force:
-        cursor.execute("SELECT id, title, snippet FROM jobs")
+        cursor.execute("SELECT id, title, snippet, job_url FROM jobs")
     else:
-        cursor.execute("SELECT id, title, snippet FROM jobs WHERE min_exp IS NULL OR exp_category IS NULL")
+        cursor.execute("SELECT id, title, snippet, job_url FROM jobs WHERE min_exp IS NULL OR exp_category IS NULL")
     rows = cursor.fetchall()
     if not rows:
         conn.close()
@@ -176,7 +176,7 @@ def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> in
     updated = 0
     batch = []
     for r in rows:
-        min_e, max_e, cat = parse_job_experience(r["title"], r["snippet"])
+        min_e, max_e, cat = parse_job_experience(r["title"], r["snippet"], r["job_url"])
         batch.append((min_e, max_e, cat, r["id"]))
         if len(batch) >= 500:
             cursor.executemany("UPDATE jobs SET min_exp = ?, max_exp = ?, exp_category = ? WHERE id = ?", batch)
@@ -214,7 +214,7 @@ def save_job(job: dict, db_path: Path = DB_PATH) -> bool:
     exp_category = job.get("exp_category")
     if exp_category is None:
         from .filter import parse_job_experience
-        min_exp, max_exp, exp_category = parse_job_experience(job.get("title", ""), job.get("snippet", ""))
+        min_exp, max_exp, exp_category = parse_job_experience(job.get("title", ""), job.get("snippet", ""), job.get("job_url", ""))
 
     try:
         cursor.execute("""
@@ -490,7 +490,7 @@ def get_jobs_list(
     if experience in ("1_year", "junior"):
         conditions.append("""(
             (j.exp_category = '1_year' OR (j.min_exp IS NOT NULL AND j.min_exp <= 2.0))
-            AND (j.min_exp IS NULL OR j.min_exp < 3.0)
+            AND (j.min_exp IS NULL OR j.min_exp < 2.5)
             AND (j.exp_category IS NULL OR j.exp_category NOT IN ('mid', 'senior'))
             AND LOWER(j.snippet) NOT LIKE '%3-6%' AND LOWER(j.snippet) NOT LIKE '%3 - 6%' AND LOWER(j.snippet) NOT LIKE '%3 to 6%'
             AND LOWER(j.snippet) NOT LIKE '%3+ years%' AND LOWER(j.snippet) NOT LIKE '%4+ years%' AND LOWER(j.snippet) NOT LIKE '%5+ years%'
@@ -498,14 +498,19 @@ def get_jobs_list(
             AND LOWER(j.title) NOT LIKE '%senior%' AND LOWER(j.title) NOT LIKE '%lead%' AND LOWER(j.title) NOT LIKE '%staff%' AND LOWER(j.title) NOT LIKE '%principal%'
             AND LOWER(j.title) NOT LIKE '% sde 2%' AND LOWER(j.title) NOT LIKE '% sde-2%' AND LOWER(j.title) NOT LIKE '% sde ii%'
             AND LOWER(j.title) NOT LIKE '% sde 3%' AND LOWER(j.title) NOT LIKE '% sde-3%'
+            AND LOWER(j.job_url) NOT LIKE '%-3-to-%' AND LOWER(j.job_url) NOT LIKE '%-4-to-%' AND LOWER(j.job_url) NOT LIKE '%-5-to-%'
+            AND LOWER(j.job_url) NOT LIKE '%-6-to-%' AND LOWER(j.job_url) NOT LIKE '%-7-to-%' AND LOWER(j.job_url) NOT LIKE '%-8-to-%'
+            AND LOWER(j.job_url) NOT LIKE '%-9-to-%' AND LOWER(j.job_url) NOT LIKE '%-10-to-%'
         )""")
     elif experience == "fresher":
         conditions.append("""(
             (j.exp_category = 'fresher' OR j.min_exp = 0.0)
-            AND (j.min_exp IS NULL OR j.min_exp < 2.0)
+            AND (j.min_exp IS NULL OR j.min_exp <= 1.0)
             AND (j.exp_category IS NULL OR j.exp_category NOT IN ('mid', 'senior'))
             AND LOWER(j.title) NOT LIKE '%senior%' AND LOWER(j.title) NOT LIKE '%lead%'
             AND LOWER(j.snippet) NOT LIKE '%3-6%' AND LOWER(j.snippet) NOT LIKE '%2+%' AND LOWER(j.snippet) NOT LIKE '%3+%'
+            AND LOWER(j.job_url) NOT LIKE '%-2-to-%' AND LOWER(j.job_url) NOT LIKE '%-3-to-%' AND LOWER(j.job_url) NOT LIKE '%-4-to-%'
+            AND LOWER(j.job_url) NOT LIKE '%-5-to-%' AND LOWER(j.job_url) NOT LIKE '%-6-to-%' AND LOWER(j.job_url) NOT LIKE '%-7-to-%'
         )""")
     elif experience == "mid":
         conditions.append("""(

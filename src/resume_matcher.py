@@ -203,21 +203,41 @@ def calculate_job_match(
         if any(w in job_title for w in tr_words):
             score += 14
 
-    is_senior_role = any(w in job_title for w in ["senior", "lead", "staff", "principal", "manager", "director"])
-    is_fresher_role = any(w in job_title for w in ["junior", "fresher", "intern", "associate", "graduate", "sde 1", "entry"])
+    cat = job.get("exp_category")
+    is_senior_role = (cat == "senior") or any(w in job_title for w in ["senior", "lead", "staff", "principal", "manager", "director", "architect", "iii", "iv", "v", "3", "4", "5"])
+    is_mid_role = (cat == "mid") or any(w in job_title for w in ["mid", "intermediate", "ii", "sde 2", "sde-2", "sde ii"])
+    is_fresher_role = (cat == "fresher") or any(w in job_title for w in ["junior", "fresher", "intern", "associate", "graduate", "sde 1", "entry"])
 
-    if user_experience == "fresher":
+    if user_experience in ("fresher", "intern"):
         if is_fresher_role:
             score += 18
         elif is_senior_role:
-            score -= 28
+            score -= 35
+        elif is_mid_role:
+            score -= 20
         else:
             score += 6
+    elif user_experience in ("1_year", "junior"):
+        if is_senior_role:
+            score -= 30
+        elif is_mid_role:
+            score -= 15
+        elif is_fresher_role or not is_senior_role:
+            score += 12
     elif user_experience == "senior":
         if is_senior_role:
             score += 16
         elif is_fresher_role:
-            score -= 12
+            score -= 20
+        elif is_mid_role:
+            score += 4
+    elif user_experience == "mid":
+        if is_mid_role:
+            score += 16
+        elif is_senior_role:
+            score -= 10
+        elif is_fresher_role:
+            score -= 10
 
     final_score = max(38, min(98, score))
 

@@ -205,7 +205,7 @@ def clean_and_normalize_job(raw_job: dict) -> dict:
     is_remote = bool(raw_job.get("is_remote")) or "remote" in location.lower() or "remote" in title.lower()
 
     # Pre-calculate experience bounds
-    min_exp, max_exp, exp_category = parse_job_experience(title, snippet)
+    min_exp, max_exp, exp_category = parse_job_experience(title, snippet, job_url)
 
     return {
         "id": clean_text(raw_job.get("id")),
@@ -340,71 +340,106 @@ def is_irrelevant_title(title: str) -> bool:
             return True
     return False
 
-def parse_job_experience(title: str, snippet: str = "") -> Tuple[float, float, str]:
+def parse_job_experience(title: str, snippet: str = "", job_url: str = "") -> Tuple[float, float, str]:
     """
     Extracts minimum and maximum required experience in years and assigns
     the accurate category ('fresher', '1_year', 'mid', 'senior').
     Guarantees that SDE-2/3, Level II/III, 3+ years, 3-6 years, or Senior/Lead roles
     are NEVER misclassified as 1-year or fresher.
+    Accurately extracts ground-truth experience ranges from job URLs (e.g. Naukri slugs)
+    and title plus notations (e.g. 10Yrs+, 4 Yrs+).
     """
     title_str = (title or "").strip()
     snippet_str = (snippet or "").strip()
-    text = f"{title_str} {snippet_str}".lower()
+    url_str = (job_url or "").strip().lower()
 
-    # Guard against company age / market presence (e.g. 'company with 15 years in market')
-    clean_text = re.sub(r"\b(?:company|organization|firm|agency|founded|presence|in business)\s+[^.!?\n]{0,40}\b\d+\s*(?:years?|yrs?)\b", "", text)
+    tl = title_str.lower()
+    snip_l = snippet_str.lower()
+    combined = f"{title_str} {snippet_str}".lower()
+
+    # Guard against company age / market presence (e.g. 'company with 15 years in business')
+    clean_text = re.sub(r"\b(?:company|organization|firm|agency|founded|presence|in business)\s+[^.!?\n]{0,40}\b\d+\s*(?:years?|yrs?)\b", "", combined)
     clean_text = re.sub(r"\b\d+\s*(?:years?|yrs?)\s+of\s+(?:company|industry|business|market)\s+presence\b", "", clean_text)
 
     min_exp = None
     max_exp = None
 
-    # 1. Range: X-Y years, X to Y years, X–Y years, X—Y years
-    m_range = re.search(r"(?:(?:exp(?:erience)?|relevant\s+exp(?:erience)?|hands-on\s+exp(?:erience)?)\s*[:\-]?\s*)?(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*(?:\+)?\s*(?:years?|yrs?|yr\b)", clean_text)
-    if not m_range:
-        # Also match "experience: 3 - 6" or "exp: 3-6" without word "years"
-        m_range = re.search(r"\b(?:exp(?:erience)?|relevant\s+exp(?:erience)?)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\b", clean_text)
-    if m_range:
-        min_exp = float(m_range.group(1))
-        max_exp = float(m_range.group(2))
+    # --- 1. Ground Truth from URL (especially Naukri slugs, e.g. -3-to-8-years-, -10-to-18-years-) ---
+    if url_str:
+        m_url_range = re.search(r"[-_/](\d+)[-_]to[-_](\d+)[-_]years?", url_str)
+        if m_url_range:
+            min_exp = float(m_url_range.group(1))
+            max_exp = float(m_url_range.group(2))
+        else:
+            m_url_plus = re.search(r"[-_/](\d+)[-_]plus[-_]years?", url_str)
+            if m_url_plus:
+                min_exp = float(m_url_plus.group(1))
+                max_exp = min_exp + 3.0
 
-    # 2. X+ years
+    # --- 2. Title Specific Numbers (High priority because titles describe the actual opening) ---
+    # a) Title range: "3-6 yrs", "3 to 8 years", "9 TO 12 YEARS", "0-2 years"
+    m_title_range = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*(?:\+)?\s*(?:years?|yrs?|yr\b)", tl)
+    if m_title_range:
+        t_min = float(m_title_range.group(1))
+        t_max = float(m_title_range.group(2))
+        min_exp = t_min if min_exp is None else max(min_exp, t_min)
+        max_exp = t_max if max_exp is None else max(max_exp, t_max)
+
+    # b) Title plus: "10Yrs+", "4 Yrs+", "10+ yrs", "5+ years", "3+ Yrs Exp"
+    m_title_plus = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr\b)\s*\+", tl) or re.search(r"\b(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?|yr\b)", tl)
+    if m_title_plus:
+        t_min = float(m_title_plus.group(1))
+        min_exp = t_min if min_exp is None else max(min_exp, t_min)
+        max_exp = (min_exp + 3.0) if max_exp is None else max(max_exp, min_exp + 3.0)
+
+    # --- 3. Snippet Text Patterns (if min_exp still None) ---
     if min_exp is None:
-        m_plus = re.search(r"(?:(?:exp(?:erience)?|relevant\s+exp(?:erience)?|hands-on\s+exp(?:erience)?)\s*[:\-]?\s*)?(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?|yr\b)", clean_text)
+        # Range: X-Y years, X to Y years, X–Y years, X—Y years
+        m_range = re.search(r"(?:(?:exp(?:erience)?|relevant\s+exp(?:erience)?|hands-on\s+exp(?:erience)?)\s*[:\-]?\s*)?(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*(?:\+)?\s*(?:years?|yrs?|yr\b)", clean_text)
+        if not m_range:
+            # Also match "experience: 3 - 6" or "exp: 3-6" without word "years"
+            m_range = re.search(r"\b(?:exp(?:erience)?|relevant\s+exp(?:erience)?)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\b", clean_text)
+        if m_range:
+            min_exp = float(m_range.group(1))
+            max_exp = float(m_range.group(2))
+
+    # 4. X+ years in snippet
+    if min_exp is None:
+        m_plus = re.search(r"(?:(?:exp(?:erience)?|relevant\s+exp(?:erience)?|hands-on\s+exp(?:erience)?)\s*[:\-]?\s*)?(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?|yr\b)", clean_text) or \
+                 re.search(r"(?:(?:exp(?:erience)?|relevant\s+exp(?:erience)?|hands-on\s+exp(?:erience)?)\s*[:\-]?\s*)?(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr\b)\s*\+", clean_text)
         if m_plus:
             min_exp = float(m_plus.group(1))
             max_exp = min_exp + 3.0
 
-    # 3. Minimum / at least X years
+    # 5. Minimum / at least X years
     if min_exp is None:
         m_min = re.search(r"(?:min(?:imum)?|at\s+least)\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr\b)", clean_text)
         if m_min:
             min_exp = float(m_min.group(1))
             max_exp = min_exp + 3.0
 
-    # 4. Explicit Exp: X years
+    # 6. Explicit Exp: X years
     if min_exp is None:
         m_exp = re.search(r"(?:exp(?:erience)?|relevant\s+exp(?:erience)?)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr\b)", clean_text)
         if m_exp:
             min_exp = float(m_exp.group(1))
             max_exp = min_exp + 2.0
 
-    # 5. X years of experience / X yrs experience
+    # 7. X years of experience / X yrs experience
     if min_exp is None:
         m_of = re.search(r"(\d+(?:\.\d+)?)\s*(?:years?|yrs?|yr\b)(?:\s+of)?\s*(?:relevant\s+)?(?:experience|exp)\b", clean_text)
         if m_of:
             min_exp = float(m_of.group(1))
             max_exp = min_exp + 2.0
 
-    tl = title_str.lower()
-    snip_l = snippet_str.lower()
-
-    # Senior / Lead Signals (Title & Snippet)
+    # --- 4. Seniority Signals (Title & Snippet) ---
     senior_title_patterns = [
         r"\bsenior\b", r"\bsr\.?\b", r"\blead\b", r"\bprincipal\b", r"\bstaff\b", r"\barchitect\b",
         r"\bmanager\b", r"\bdirector\b", r"\bhead\s+of\b", r"\bvp\b", r"\bvice\s+president\b",
         r"\bchief\b", r"\btech\s+lead\b", r"\bteam\s+lead\b", r"\bengineering\s+manager\b",
         # SDE / Engineer / Developer followed by 3, 4, 5 or III, IV, V
         r"\b(?:software\s+(?:development\s+)?engineer|engineer|developer|sde|application\s+engineer|associate|specialist|consultant|analyst)\s*[-_,\s/]*\s*(?:iii|iv|v|3|4|5)\b",
+        r"\b(?:sde|swe)\s*[-_]?\s*(?:iii|iv|v|3|4|5)\b",
         r"\b(?:iii|iv|v)\b",
         r"\b(?:l3|l4|l5|level\s*[345]|grade\s*[345]|band\s*[345])\b",
         r"\b(?:avp|agm|dgm|gm|evp|svp|cto|cio|coo|ceo)\b"
@@ -423,6 +458,7 @@ def parse_job_experience(title: str, snippet: str = "") -> Tuple[float, float, s
         r"\bmid\b", r"\bmid-level\b", r"\bintermediate\b",
         # SDE / Engineer / Developer followed by 2 or II
         r"\b(?:software\s+(?:development\s+)?engineer|engineer|developer|sde|application\s+engineer|associate|specialist|consultant|analyst)\s*[-_,\s/]*\s*(?:ii|2)\b",
+        r"\b(?:sde|swe)\s*[-_]?\s*(?:ii|2)\b",
         r"\b(?:l2|level\s*2|grade\s*2|band\s*2)\b",
         r"\bii\b"
     ]
@@ -438,6 +474,8 @@ def parse_job_experience(title: str, snippet: str = "") -> Tuple[float, float, s
         r"\bsde\s*1\b", r"\bsde-1\b", r"\bsde\s*i\b", r"\bengineer\s*1\b", r"\bdeveloper\s*1\b", r"\bl1\b", r"\bi\b"
     ])
 
+    # --- 5. Categorization Decision ---
+    # Seniority keywords ALWAYS override low boilerplate snippets (e.g. Internshala boilerplate "0-1 years")
     if is_senior or (min_exp is not None and min_exp >= 5.0):
         category = "senior"
         min_exp = max(min_exp if min_exp is not None else 5.0, 5.0)
@@ -462,18 +500,16 @@ def parse_job_experience(title: str, snippet: str = "") -> Tuple[float, float, s
 
     return min_exp, max_exp, category
 
-    return min_exp, max_exp, category
-
-def is_high_experience_job(title: str, snippet: str = "", exp_filter: str = "1_year") -> bool:
+def is_high_experience_job(title: str, snippet: str = "", exp_filter: str = "1_year", job_url: str = "") -> bool:
     """
     Identifies if a job requires high experience (3+ years, Mid, Senior, Lead, etc.)
     and should be strictly excluded from 1-year experience or fresher filtering.
     """
-    min_exp, max_exp, category = parse_job_experience(title, snippet)
+    min_exp, max_exp, category = parse_job_experience(title, snippet, job_url)
     if exp_filter in ("fresher", "intern", "0-1"):
         return category in ("mid", "senior") or (min_exp is not None and min_exp >= 1.5)
     elif exp_filter in ("1_year", "1 year", "1-2", "junior"):
-        return category in ("mid", "senior") or (min_exp is not None and min_exp >= 3.0)
+        return category in ("mid", "senior") or (min_exp is not None and min_exp >= 2.5)
     elif exp_filter in ("mid", "2-5"):
         return category == "senior" or (min_exp is not None and min_exp >= 5.0)
     elif exp_filter in ("senior", "5+"):
@@ -492,13 +528,19 @@ def matches_experience_filter(job: dict, exp_filter: str = "1_year", years_exp: 
 
     title = job.get("title", "")
     snippet = job.get("snippet", "")
-    min_exp, max_exp, category = parse_job_experience(title, snippet)
+    job_url = job.get("job_url", "")
+
+    category = job.get("exp_category")
+    min_exp = job.get("min_exp")
+    max_exp = job.get("max_exp")
+    if not category or category not in ("fresher", "1_year", "mid", "senior"):
+        min_exp, max_exp, category = parse_job_experience(title, snippet, job_url)
 
     # 1. Target: 1 Year Experience (0-2 Yrs / Junior / Entry / SDE 1)
     if norm_filter in ("1_year", "1 year", "1yr", "1", "0-1", "0-2", "1-2", "junior"):
         if category in ("mid", "senior"):
             return False
-        if min_exp is not None and min_exp >= 3.0:
+        if min_exp is not None and min_exp >= 2.5:
             return False
         return True
 
@@ -527,10 +569,19 @@ def get_job_experience_badge(job: dict) -> dict:
     """
     title = (job.get("title") or "").strip()
     snippet = (job.get("snippet") or "").strip()
-    min_exp, max_exp, category = parse_job_experience(title, snippet)
+    job_url = (job.get("job_url") or "").strip()
+
+    category = job.get("exp_category")
+    min_exp = job.get("min_exp")
+    max_exp = job.get("max_exp")
+    if not category or category not in ("fresher", "1_year", "mid", "senior"):
+        min_exp, max_exp, category = parse_job_experience(title, snippet, job_url)
 
     if category == "senior":
-        lbl = f"⭐ {int(min_exp)}+ Yrs & Senior" if min_exp and min_exp >= 5 else "⭐ Senior & Lead"
+        if min_exp and min_exp >= 5:
+            lbl = f"⭐ {int(min_exp)}+ Yrs & Senior"
+        else:
+            lbl = "⭐ Senior & Lead"
         return {"category": "senior", "label": lbl, "badge_class": "badge-purple", "min_exp": min_exp, "max_exp": max_exp}
     elif category == "mid":
         if min_exp and max_exp and max_exp > min_exp:
