@@ -40,6 +40,7 @@ from src.pitch_generator import generate_outreach_pitch
 from src.study_vault import (
     get_resources_for_user, add_resource, 
     toggle_resource_completion, delete_resource, 
+    update_resource_notes, get_resource_by_id, generate_ai_study_assist,
     RESOURCES_DIR, init_study_vault_db
 )
 from src.filter import is_india_location
@@ -1474,6 +1475,15 @@ class ResourceToggleRequest(BaseModel):
     resource_id: int
     user_email: str
 
+class ResourceNotesRequest(BaseModel):
+    resource_id: int
+    notes: str
+    user_email: Optional[str] = ""
+
+class ResourceAIAssistRequest(BaseModel):
+    resource_id: int
+    action: str = "takeaways"  # "takeaways" or "quiz"
+
 @app.get("/api/resources")
 async def get_resources_endpoint(email: str = DEFAULT_EMAIL):
     resources = get_resources_for_user(email)
@@ -1528,17 +1538,33 @@ async def toggle_resource_status_endpoint(req: ResourceToggleRequest):
     new_status = toggle_resource_completion(req.resource_id, req.user_email)
     return {"status": "ok", "is_completed": new_status}
 
+@app.post("/api/resources/save-notes")
+async def save_resource_notes_endpoint(req: ResourceNotesRequest):
+    ok = update_resource_notes(req.resource_id, req.notes, req.user_email or "")
+    return {"status": "ok", "saved": ok}
+
+@app.post("/api/resources/ai-assist")
+async def ai_study_assist_endpoint(req: ResourceAIAssistRequest):
+    result = generate_ai_study_assist(req.resource_id, req.action)
+    return result
+
 @app.delete("/api/resources/{resource_id}")
 async def delete_resource_endpoint(resource_id: int, email: str = DEFAULT_EMAIL):
     deleted = delete_resource(resource_id, email)
     return {"status": "ok", "deleted": deleted}
 
 @app.get("/api/resources/file/{filename}")
-async def get_resource_file(filename: str):
+async def get_resource_file(filename: str, download: bool = False):
     target = RESOURCES_DIR / filename
     if target.exists() and target.is_file():
         media_type = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
-        return FileResponse(target, media_type=media_type, filename=filename)
+        disposition_type = "attachment" if download else "inline"
+        return FileResponse(
+            target, 
+            media_type=media_type, 
+            filename=filename, 
+            content_disposition_type=disposition_type
+        )
     raise HTTPException(status_code=404, detail="Resource file not found.")
 
 # ------------------------------------------------------------------------------

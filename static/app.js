@@ -392,7 +392,14 @@ async function handleOnboardLogin() {
         const data = await safeParseResponse(res);
 
         if (!res.ok) {
-            const detail = data.detail || (res.status >= 500 ? "Server is waking up or deploying. Please try again in 5 seconds." : "Invalid login credentials. Please try again.");
+            if (res.status >= 500) {
+                showAuthAlert("⚡ Server is waking up (Render free tier spin-up takes ~30s). Retrying automatically in 4 seconds...", "info");
+                setTimeout(() => {
+                    handleOnboardLogin();
+                }, 4000);
+                return;
+            }
+            const detail = data.detail || "Invalid login credentials. Please try again.";
             if (res.status === 404) {
                 showAuthAlert(`${detail} <a href="javascript:void(0)" onclick="switchToSignupWithEmail('${escapeHtml(email)}')" style="color:var(--primary); font-weight:700; text-decoration:underline; margin-left:6px;">Create Account</a>`, "error");
             } else {
@@ -3135,25 +3142,23 @@ function renderStudyResources(items) {
         } else if (isLink) {
             iconEmoji = "🔗";
             iconClass = "resource-icon-link";
-            typeBadge = "Web Link";
+            typeBadge = "Web Roadmap";
         }
 
         const tagsHtml = (r.tags || []).map(t => 
             `<span class="resource-tag">${escapeHtml(t)}</span>`
         ).join("");
 
-        let mainActionBtn = "";
-        if (r.content_text) {
-            mainActionBtn = `<button class="btn btn-primary btn-sm" onclick="openResourceReader(${r.id})"><span>📖</span> Read Guide</button>`;
-        } else if (isPdf || r.file_path) {
-            const fileUrl = r.url || `/api/resources/file/${encodeURIComponent(r.file_path.split(/[\\/]/).pop())}`;
-            mainActionBtn = `<a href="${fileUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm"><span>📥</span> Open PDF</a>`;
-        } else if (r.url) {
-            mainActionBtn = `<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm"><span>🌐</span> Open Link</a>`;
+        // Optional secondary download button for files
+        let downloadBtn = "";
+        if (isPdf || r.file_path) {
+            const rawFilename = (r.file_path || "").split(/[\\/]/).pop() || "resource.pdf";
+            const downloadUrl = (r.url && r.url.startsWith("/api/")) ? `${r.url}?download=1` : `/api/resources/file/${encodeURIComponent(rawFilename)}?download=1`;
+            downloadBtn = `<a href="${downloadUrl}" download class="btn btn-secondary btn-sm" onclick="event.stopPropagation()" title="Download file to device"><span>⬇️</span> Download</a>`;
         }
 
         return `
-            <div class="resource-card ${isCompleted ? 'completed' : ''}" id="resource-card-${r.id}">
+            <div class="resource-card ${isCompleted ? 'completed' : ''}" id="resource-card-${r.id}" onclick="openResourceReader(${r.id})" style="cursor:pointer;">
                 <div>
                     <div class="resource-top-bar">
                         <div style="display:flex; align-items:center; gap:10px;">
@@ -3165,7 +3170,10 @@ function renderStudyResources(items) {
                                 <span class="badge" style="font-size:11px; background:var(--bg-main); color:var(--text-secondary); margin-left:4px;">${typeBadge}</span>
                             </div>
                         </div>
-                        ${isCompleted ? '<span class="studied-badge">✓ Studied</span>' : ''}
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="badge" style="font-size:10.5px; background:var(--bg-main); color:var(--text-muted); border:1px solid var(--border-subtle);">⏱️ 5 min study</span>
+                            ${isCompleted ? '<span class="studied-badge">✓ Studied</span>' : ''}
+                        </div>
                     </div>
 
                     <h3 class="resource-card-title">${escapeHtml(r.title || 'Untitled Resource')}</h3>
@@ -3176,9 +3184,12 @@ function renderStudyResources(items) {
                     </div>
                 </div>
 
-                <div class="resource-card-actions">
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        ${mainActionBtn}
+                <div class="resource-card-actions" onclick="event.stopPropagation();">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-sm" onclick="openResourceReader(${r.id})">
+                            <span>📖</span> Read in App
+                        </button>
+                        ${downloadBtn}
                         <button class="btn btn-secondary btn-sm" onclick="toggleResourceCompletion(${r.id}, event)" title="${isCompleted ? 'Mark as Unstudied' : 'Mark as Studied'}">
                             ${isCompleted ? 'Mark Unread' : '✓ Done'}
                         </button>
@@ -3194,51 +3205,390 @@ function renderStudyResources(items) {
 }
 
 // ------------------------------------------------------------------------------
-// In-App Resource Reader Modal
+// In-App Resource Reader & Interactive Study Studio
 // ------------------------------------------------------------------------------
+let currentQuizState = { score: 0, answered: 0, total: 3, questions: [] };
+let scratchpadSaveTimer = null;
+
 function openResourceReader(resourceId) {
     const res = (state.resources || []).find(r => r.id === resourceId);
     if (!res) return;
 
     state.activeReadingResourceId = resourceId;
 
-    document.getElementById("reader-title").textContent = res.title || "Study Guide";
-    document.getElementById("reader-category-badge").textContent = res.category || "General";
-    document.getElementById("reader-meta-desc").textContent = res.description || "In-app study notes and interview cheatsheet.";
-    
+    // Header metadata
+    const titleEl = document.getElementById("reader-title");
+    if (titleEl) titleEl.textContent = res.title || "Study Guide";
+
+    const catBadge = document.getElementById("reader-category-badge");
+    if (catBadge) catBadge.textContent = res.category || "General";
+
+    const descEl = document.getElementById("reader-meta-desc");
+    if (descEl) descEl.textContent = res.description || "In-app study notes, interactive quiz and AI takeaways.";
+
     const typeBadge = document.getElementById("reader-type-badge");
     if (typeBadge) {
         typeBadge.textContent = res.resource_type ? res.resource_type.toUpperCase() : "GUIDE";
     }
 
+    const statusPill = document.getElementById("reader-status-pill");
+    if (statusPill) {
+        statusPill.style.display = res.is_completed ? "inline-flex" : "none";
+    }
+
     const toggleBtn = document.getElementById("reader-btn-toggle");
     if (toggleBtn) {
-        toggleBtn.textContent = res.is_completed ? "✓ Mark as Unstudied" : "✓ Mark as Studied";
+        toggleBtn.textContent = res.is_completed ? "✓ Mark as Incomplete" : "✓ Mark as Studied";
     }
 
+    const isPdf = res.resource_type === "pdf" || (res.file_path && res.file_path.toLowerCase().endsWith(".pdf"));
+    const isLink = res.resource_type === "link" && !res.content_text;
+
+    const pdfFrame = document.getElementById("reader-pdf-frame");
     const contentBody = document.getElementById("reader-content-body");
-    if (contentBody) {
-        contentBody.innerHTML = renderMarkdownSimple(res.content_text || "_No text content provided._");
-        contentBody.scrollTop = 0;
+    const linkBody = document.getElementById("reader-link-body");
+    const downloadBtn = document.getElementById("reader-btn-download");
+
+    // Setup Content Pane depending on document type
+    if (isPdf || res.file_path) {
+        const rawFilename = (res.file_path || "").split(/[\\/]/).pop() || "resource.pdf";
+        const fileViewUrl = (res.url && res.url.startsWith("/api/")) ? res.url : `/api/resources/file/${encodeURIComponent(rawFilename)}`;
+        
+        if (pdfFrame) {
+            pdfFrame.style.display = "block";
+            pdfFrame.src = `${fileViewUrl}#toolbar=1&navpanes=0`;
+        }
+        if (contentBody) contentBody.style.display = "none";
+        if (linkBody) linkBody.style.display = "none";
+
+        if (downloadBtn) {
+            downloadBtn.href = `${fileViewUrl}?download=1`;
+            downloadBtn.style.display = "inline-flex";
+        }
+    } else if (res.content_text) {
+        if (pdfFrame) {
+            pdfFrame.style.display = "none";
+            pdfFrame.src = "about:blank";
+        }
+        if (linkBody) linkBody.style.display = "none";
+        if (contentBody) {
+            contentBody.style.display = "block";
+            contentBody.innerHTML = renderMarkdownSimple(res.content_text);
+            contentBody.scrollTop = 0;
+        }
+        if (downloadBtn) downloadBtn.style.display = "none";
+    } else if (isLink || res.url) {
+        if (pdfFrame) {
+            pdfFrame.style.display = "none";
+            pdfFrame.src = "about:blank";
+        }
+        if (contentBody) contentBody.style.display = "none";
+        if (linkBody) {
+            linkBody.style.display = "block";
+            const previewTitle = document.getElementById("link-preview-title");
+            const previewDesc = document.getElementById("link-preview-desc");
+            const previewUrl = document.getElementById("link-preview-url");
+            if (previewTitle) previewTitle.textContent = res.title || "External Study Resource";
+            if (previewDesc) previewDesc.textContent = res.description || "Web-based technical roadmap & interactive practice problems.";
+            if (previewUrl) {
+                previewUrl.href = res.url || "#";
+            }
+        }
+        if (downloadBtn) downloadBtn.style.display = "none";
     }
 
+    // Populate Scratchpad Notes
+    const notesTextarea = document.getElementById("reader-user-notes");
+    if (notesTextarea) {
+        notesTextarea.value = res.user_notes || "";
+    }
+    const saveIndicator = document.getElementById("notes-save-indicator");
+    if (saveIndicator) saveIndicator.textContent = "✓ Saved";
+
+    // Reset and switch to In-App Reader Tab
+    switchReaderTab("doc");
+
+    // Open Modal
     const modal = document.getElementById("resource-reader-modal");
     if (modal) modal.style.display = "flex";
+
+    // Load AI Takeaways and Interactive Practice Quiz in parallel
+    loadStudyAITakeaways(resourceId);
+    loadStudyQuiz(resourceId);
 }
 
 function closeResourceReader() {
     const modal = document.getElementById("resource-reader-modal");
-    if (modal) modal.style.display = "none";
+    if (modal) {
+        modal.style.display = "none";
+        modal.classList.remove("reader-modal-fullscreen");
+    }
+    const pdfFrame = document.getElementById("reader-pdf-frame");
+    if (pdfFrame) pdfFrame.src = "about:blank";
     state.activeReadingResourceId = null;
+}
+
+function toggleReaderFullscreen() {
+    const modal = document.getElementById("resource-reader-modal");
+    if (!modal) return;
+    modal.classList.toggle("reader-modal-fullscreen");
+    const btn = document.getElementById("btn-reader-fullscreen");
+    if (btn) {
+        btn.textContent = modal.classList.contains("reader-modal-fullscreen") ? "⛶ Minimize" : "⛶";
+    }
+}
+
+function switchReaderTab(tabName) {
+    const tabs = ["doc", "ai", "quiz", "notes"];
+    tabs.forEach(t => {
+        const btn = document.getElementById(`tab-btn-${t}`);
+        const pane = document.getElementById(`reader-pane-${t}`);
+        if (btn) btn.classList.toggle("active", t === tabName);
+        if (pane) pane.classList.toggle("active", t === tabName);
+    });
 }
 
 function copyReaderContent() {
     const res = (state.resources || []).find(r => r.id === state.activeReadingResourceId);
-    if (!res || !res.content_text) {
-        return showToast("No text content to copy");
+    if (!res) return showToast("No resource open");
+    const textToCopy = res.content_text || `${res.title}\n${res.description}\n${res.url || ''}`;
+    navigator.clipboard.writeText(textToCopy);
+    showToast("📋 Study guide details copied to clipboard!");
+}
+
+function handleScratchpadInput() {
+    const indicator = document.getElementById("notes-save-indicator");
+    if (indicator) indicator.textContent = "Saving...";
+
+    clearTimeout(scratchpadSaveTimer);
+    scratchpadSaveTimer = setTimeout(async () => {
+        const resourceId = state.activeReadingResourceId;
+        if (!resourceId) return;
+
+        const textarea = document.getElementById("reader-user-notes");
+        const notes = textarea ? textarea.value : "";
+        const email = state.currentUser?.email || "";
+
+        try {
+            await fetch("/api/resources/save-notes", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    resource_id: resourceId,
+                    notes: notes,
+                    user_email: email
+                })
+            });
+
+            const res = (state.resources || []).find(r => r.id === resourceId);
+            if (res) res.user_notes = notes;
+
+            if (indicator) indicator.textContent = "✓ Saved";
+        } catch (e) {
+            if (indicator) indicator.textContent = "⚠️ Failed to save";
+        }
+    }, 700);
+}
+
+async function loadStudyAITakeaways(resourceId) {
+    const container = document.getElementById("reader-ai-content");
+    if (!container) return;
+
+    container.innerHTML = `
+        <div style="text-align:center; padding:32px 10px; color:var(--text-secondary);">
+            <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+            <span>Analyzing guide and generating AI takeaways...</span>
+        </div>
+    `;
+
+    try {
+        const res = await fetch("/api/resources/ai-assist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resource_id: resourceId, action: "takeaways" })
+        });
+        const data = await res.json();
+        if (data.status !== "ok") throw new Error("Failed to load takeaways");
+
+        let html = `
+            <div style="background:linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(147, 51, 234, 0.08) 100%); border:1px solid rgba(79, 70, 229, 0.2); border-radius:var(--radius-md); padding:16px; margin-bottom:18px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:12px; font-weight:700; text-transform:uppercase; color:var(--primary-600); letter-spacing:0.5px;">✨ Executive AI Summary</span>
+                    <span style="font-size:11.5px; color:var(--text-secondary);">${escapeHtml(data.reading_time || '5 min read')}</span>
+                </div>
+                <p style="font-size:13.5px; line-height:1.6; color:var(--text-primary); margin:0;">${escapeHtml(data.summary)}</p>
+            </div>
+
+            <h4 style="font-family:var(--font-heading); font-size:15px; font-weight:800; margin-bottom:10px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                <span>🎯</span> 5 High-Yield Key Takeaways
+            </h4>
+            <div style="margin-bottom:20px;">
+                ${(data.key_takeaways || []).map(pt => `
+                    <div class="ai-takeaway-item">
+                        <span style="color:var(--primary-600); font-weight:800; margin-top:2px;">•</span>
+                        <div>${renderMarkdownSimple(pt)}</div>
+                    </div>
+                `).join("")}
+            </div>
+
+            <h4 style="font-family:var(--font-heading); font-size:15px; font-weight:800; margin-bottom:10px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+                <span>💬</span> Most-Asked Interview Questions & Answers
+            </h4>
+            <div style="margin-bottom:20px;">
+                ${(data.interview_questions || []).map((qa, i) => `
+                    <div class="ai-question-card">
+                        <div style="font-weight:700; font-size:13.5px; color:var(--text-primary); margin-bottom:6px;">Q${i+1}: ${escapeHtml(qa.q)}</div>
+                        <div style="font-size:13px; color:var(--text-secondary); line-height:1.5;">${escapeHtml(qa.a)}</div>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+
+        if (data.cheat_sheet_tip) {
+            html += `
+                <div style="padding:12px 16px; background:rgba(16, 185, 129, 0.08); border-left:4px solid #10b981; border-radius:0 8px 8px 0; font-size:13px; color:var(--text-primary); margin-top:14px;">
+                    ${escapeHtml(data.cheat_sheet_tip)}
+                </div>
+            `;
+        }
+
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:30px 10px; color:var(--text-muted);">
+                <p>Unable to load AI Takeaways at this time.</p>
+                <button class="btn btn-secondary btn-sm" onclick="loadStudyAITakeaways(${resourceId})">Retry</button>
+            </div>
+        `;
     }
-    navigator.clipboard.writeText(res.content_text);
-    showToast("📋 Study guide copied to clipboard!");
+}
+
+async function loadStudyQuiz(resourceId) {
+    const container = document.getElementById("reader-quiz-container");
+    if (!container) return;
+
+    container.innerHTML = `
+        <div style="text-align:center; padding:32px 10px; color:var(--text-secondary);">
+            <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+            <span>Generating 3 interactive practice questions...</span>
+        </div>
+    `;
+
+    try {
+        const res = await fetch("/api/resources/ai-assist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resource_id: resourceId, action: "quiz" })
+        });
+        const data = await res.json();
+        if (data.status !== "ok" || !data.quiz) throw new Error("Failed to load quiz");
+
+        currentQuizState = {
+            score: 0,
+            answered: 0,
+            total: data.quiz.length,
+            questions: data.quiz
+        };
+
+        renderQuizQuestions();
+    } catch (e) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:30px 10px; color:var(--text-muted);">
+                <p>Failed to generate quiz questions for this resource.</p>
+                <button class="btn btn-secondary btn-sm" onclick="loadStudyQuiz(${resourceId})">Retry</button>
+            </div>
+        `;
+    }
+}
+
+function renderQuizQuestions() {
+    const container = document.getElementById("reader-quiz-container");
+    if (!container) return;
+
+    const letters = ["A", "B", "C", "D"];
+    let html = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid var(--border-subtle); flex-wrap:wrap; gap:8px;">
+            <div>
+                <h4 style="font-family:var(--font-heading); font-size:15px; font-weight:700; color:var(--text-primary); margin:0;">⚡ Instant Knowledge Check</h4>
+                <div style="font-size:12px; color:var(--text-secondary);">Answer all 3 questions to self-assess before marking complete.</div>
+            </div>
+            <div style="font-size:13px; font-weight:800; color:var(--primary-600); background:var(--bg-main); padding:4px 12px; border-radius:20px; border:1px solid var(--border-default);" id="quiz-score-display">
+                Score: 0 / ${currentQuizState.total}
+            </div>
+        </div>
+    `;
+
+    html += currentQuizState.questions.map((q, qIdx) => `
+        <div class="quiz-question-card" id="quiz-q-card-${qIdx}">
+            <div class="quiz-question-text">Question ${qIdx + 1}: ${escapeHtml(q.question)}</div>
+            <div class="quiz-options-list">
+                ${(q.options || []).map((opt, oIdx) => `
+                    <button class="quiz-option-btn" id="quiz-btn-${qIdx}-${oIdx}" onclick="selectQuizAnswer(${qIdx}, ${oIdx})">
+                        <span class="quiz-option-letter">${letters[oIdx]}</span>
+                        <span>${escapeHtml(opt)}</span>
+                    </button>
+                `).join("")}
+            </div>
+            <div class="quiz-explanation-box" id="quiz-exp-${qIdx}" style="display:none;"></div>
+        </div>
+    `).join("");
+
+    html += `
+        <div id="quiz-completion-banner" style="display:none; margin-top:20px; padding:18px; border-radius:var(--radius-md); background:linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); border:1px solid #10b981; text-align:center;">
+            <div style="font-size:24px; margin-bottom:6px;">🎉</div>
+            <h4 style="font-family:var(--font-heading); font-size:16px; font-weight:800; color:var(--text-primary); margin-bottom:4px;" id="quiz-completion-title">Quiz Completed!</h4>
+            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;" id="quiz-completion-msg">Great job testing your understanding.</p>
+            <button class="btn btn-emerald btn-sm" onclick="toggleReaderCompletion()">✓ Mark This Material as Studied</button>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function selectQuizAnswer(qIdx, selectedIdx) {
+    const q = currentQuizState.questions[qIdx];
+    if (!q || q.isAnswered) return;
+    q.isAnswered = true;
+    currentQuizState.answered += 1;
+
+    const correctIdx = q.correct_index;
+    const isCorrect = (selectedIdx === correctIdx);
+    if (isCorrect) currentQuizState.score += 1;
+
+    // Update score display
+    const scoreEl = document.getElementById("quiz-score-display");
+    if (scoreEl) scoreEl.textContent = `Score: ${currentQuizState.score} / ${currentQuizState.total}`;
+
+    // Highlight options
+    for (let oIdx = 0; oIdx < q.options.length; oIdx++) {
+        const btn = document.getElementById(`quiz-btn-${qIdx}-${oIdx}`);
+        if (!btn) continue;
+        btn.disabled = true;
+        if (oIdx === correctIdx) {
+            btn.classList.add("correct");
+        } else if (oIdx === selectedIdx && !isCorrect) {
+            btn.classList.add("wrong");
+        }
+    }
+
+    // Show explanation
+    const expEl = document.getElementById(`quiz-exp-${qIdx}`);
+    if (expEl) {
+        expEl.style.display = "block";
+        expEl.innerHTML = `<strong>${isCorrect ? '✅ Correct!' : '❌ Incorrect.'}</strong> ${escapeHtml(q.explanation || '')}`;
+    }
+
+    // Check if all answered
+    if (currentQuizState.answered >= currentQuizState.total) {
+        const banner = document.getElementById("quiz-completion-banner");
+        const titleEl = document.getElementById("quiz-completion-title");
+        const msgEl = document.getElementById("quiz-completion-msg");
+        if (banner) {
+            banner.style.display = "block";
+            if (titleEl) titleEl.textContent = `Quiz Finished: ${currentQuizState.score}/${currentQuizState.total} Correct!`;
+            if (msgEl) msgEl.textContent = currentQuizState.score === currentQuizState.total ? "Outstanding! You mastered all 3 questions." : "Review the explanations above to strengthen any missed concepts.";
+        }
+    }
 }
 
 async function toggleReaderCompletion() {
@@ -3247,7 +3597,11 @@ async function toggleReaderCompletion() {
     const res = (state.resources || []).find(r => r.id === state.activeReadingResourceId);
     const toggleBtn = document.getElementById("reader-btn-toggle");
     if (toggleBtn && res) {
-        toggleBtn.textContent = res.is_completed ? "✓ Mark as Unstudied" : "✓ Mark as Studied";
+        toggleBtn.textContent = res.is_completed ? "✓ Mark as Incomplete" : "✓ Mark as Studied";
+    }
+    const statusPill = document.getElementById("reader-status-pill");
+    if (statusPill && res) {
+        statusPill.style.display = res.is_completed ? "inline-flex" : "none";
     }
 }
 

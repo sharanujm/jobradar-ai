@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobRadar AI &bull; Intelligent Job Search, Resume Studio & Application Agent</title>
-    <link rel="stylesheet" href="/static/styles.css?v=3.9">
+    <link rel="stylesheet" href="/static/styles.css?v=4.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
 </head>
 <body>
@@ -2727,35 +2727,120 @@
     </div>
 </div>
 
-<!-- IN-APP STUDY RESOURCE READER MODAL -->
+<!-- IN-APP STUDY RESOURCE READER & STUDY STUDIO MODAL -->
 <div class="modal-overlay" id="resource-reader-modal">
-    <div class="modal-card" style="max-width:860px; width:95%; max-height:90vh; display:flex; flex-direction:column;">
-        <div class="modal-header" style="margin-bottom:12px; padding-bottom:14px;">
-            <div style="flex:1;">
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                    <span id="reader-category-badge" class="badge" style="background:#e0e7ff; color:#3730a3;">Category</span>
+    <div class="modal-card" style="max-width:980px; width:95%; max-height:92vh; display:flex; flex-direction:column; transition:all 0.2s ease;">
+        <!-- Modal Top Header -->
+        <div class="modal-header" style="margin-bottom:8px; padding-bottom:10px; display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="flex:1; padding-right:16px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                    <span id="reader-category-badge" class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700;">Category</span>
                     <span id="reader-type-badge" class="badge badge-web">Guide</span>
+                    <span id="reader-reading-time" class="badge" style="background:var(--bg-main); color:var(--text-secondary); border:1px solid var(--border-subtle);">⏱️ 5 min read</span>
+                    <span id="reader-status-pill" class="badge" style="background:rgba(16, 185, 129, 0.12); color:#10b981; font-weight:700; display:none;">✓ Studied</span>
                 </div>
-                <h2 style="font-family:var(--font-heading); font-size:20px; font-weight:800; color:var(--text-primary); margin:0;" id="reader-title">Resource Title</h2>
+                <h2 style="font-family:var(--font-heading); font-size:20px; font-weight:800; color:var(--text-primary); margin:0; line-height:1.3;" id="reader-title">Resource Title</h2>
+                <div style="font-size:12.5px; color:var(--text-secondary); margin-top:4px;" id="reader-meta-desc">Description</div>
             </div>
-            <button class="modal-close-btn" onclick="closeResourceReader()">&times;</button>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <button class="btn btn-secondary btn-sm" id="btn-reader-fullscreen" onclick="toggleReaderFullscreen()" title="Toggle Fullscreen" style="padding:6px 10px; font-size:14px;">⛶</button>
+                <button class="modal-close-btn" onclick="closeResourceReader()" title="Close Reader">&times;</button>
+            </div>
         </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:var(--bg-main); border-radius:var(--radius-md); margin-bottom:16px; border:1px solid var(--border-default); flex-wrap:wrap; gap:8px;">
-            <div style="font-size:13px; color:var(--text-secondary);" id="reader-meta-desc">Description</div>
-            <div style="display:flex; gap:8px;">
-                <button class="btn btn-secondary btn-sm" onclick="copyReaderContent()">📋 Copy Guide</button>
+        <!-- Navigation Tabs & Action Bar -->
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-main); border-radius:var(--radius-md); margin-bottom:12px; border:1px solid var(--border-default); flex-wrap:wrap; gap:8px;">
+            <!-- Tabs -->
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button class="reader-tab-btn active" id="tab-btn-doc" onclick="switchReaderTab('doc')">
+                    <span>📖</span> In-App Reader
+                </button>
+                <button class="reader-tab-btn" id="tab-btn-ai" onclick="switchReaderTab('ai')">
+                    <span>✨</span> AI Takeaways
+                </button>
+                <button class="reader-tab-btn" id="tab-btn-quiz" onclick="switchReaderTab('quiz')">
+                    <span>⚡</span> Knowledge Quiz (3 Qs)
+                </button>
+                <button class="reader-tab-btn" id="tab-btn-notes" onclick="switchReaderTab('notes')">
+                    <span>📝</span> My Scratchpad
+                </button>
+            </div>
+
+            <!-- Quick Action Buttons -->
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" id="reader-btn-copy" onclick="copyReaderContent()">📋 Copy</button>
+                <a href="#" id="reader-btn-download" target="_blank" class="btn btn-secondary btn-sm" style="display:none;" title="Download offline copy">⬇️ Download</a>
                 <button class="btn btn-emerald btn-sm" id="reader-btn-toggle" onclick="toggleReaderCompletion()">✓ Mark as Studied</button>
             </div>
         </div>
 
-        <!-- Rendered Guide Content Body -->
-        <div id="reader-content-body" style="flex:1; overflow-y:auto; padding:20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); font-size:14px; line-height:1.7; color:var(--text-primary); max-height:55vh;">
-            Loading content...
+        <!-- Tab Pane 1: Document / Guide / PDF Reader -->
+        <div class="reader-pane active" id="reader-pane-doc">
+            <!-- PDF In-App Frame -->
+            <iframe id="reader-pdf-frame" src="" style="width:100%; height:58vh; border:1px solid var(--border-default); border-radius:var(--radius-md); display:none; background:#2d3748;" title="PDF In-App Viewer"></iframe>
+
+            <!-- Markdown / Rich Guide Text Body -->
+            <div id="reader-content-body" style="padding:22px 24px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); font-size:14px; line-height:1.75; color:var(--text-primary); max-height:58vh; overflow-y:auto;">
+                Loading material...
+            </div>
+
+            <!-- Web Link Card Preview -->
+            <div id="reader-link-body" style="padding:32px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); text-align:center; display:none;">
+                <div style="font-size:36px; margin-bottom:12px;">🌐</div>
+                <h3 style="font-family:var(--font-heading); font-size:18px; font-weight:700; margin-bottom:8px; color:var(--text-primary);" id="link-preview-title">Online Study Guide</h3>
+                <p style="font-size:13.5px; color:var(--text-secondary); max-width:540px; margin:0 auto 20px; line-height:1.5;" id="link-preview-desc">External practice roadmap and interactive problem set.</p>
+                <div style="display:flex; justify-content:center; gap:12px;">
+                    <a href="#" id="link-preview-url" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                        <span>🚀</span> Open Full Material in New Tab &rarr;
+                    </a>
+                </div>
+            </div>
         </div>
 
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px; padding-top:12px; border-top:1px solid var(--border-default);">
-            <button class="btn btn-secondary btn-sm" onclick="closeResourceReader()">Close Reader</button>
+        <!-- Tab Pane 2: AI Takeaways & Cheat-Sheet -->
+        <div class="reader-pane" id="reader-pane-ai">
+            <div id="reader-ai-content" style="padding:16px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); max-height:58vh; overflow-y:auto;">
+                <div style="text-align:center; padding:30px 10px; color:var(--text-secondary);">
+                    <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+                    <span>Generating high-yield AI takeaways &amp; interview questions...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Pane 3: Interactive Knowledge Quiz -->
+        <div class="reader-pane" id="reader-pane-quiz">
+            <div id="reader-quiz-container" style="padding:16px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); max-height:58vh; overflow-y:auto;">
+                <div style="text-align:center; padding:30px 10px; color:var(--text-secondary);">
+                    <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+                    <span>Loading interactive practice quiz...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Pane 4: Personal Study Scratchpad / Notes -->
+        <div class="reader-pane" id="reader-pane-notes">
+            <div style="padding:16px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); max-height:58vh; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div>
+                        <h4 style="font-family:var(--font-heading); font-size:15px; font-weight:700; color:var(--text-primary); margin:0;">📝 My Revision Scratchpad</h4>
+                        <div style="font-size:12px; color:var(--text-secondary);">Take private notes, write down tricky edge-cases, or summarize concepts while studying this document.</div>
+                    </div>
+                    <span id="notes-save-indicator" style="font-size:11.5px; color:#10b981; font-weight:600; display:inline-flex; align-items:center; gap:4px;">
+                        ✓ Saved
+                    </span>
+                </div>
+                <textarea id="reader-user-notes" class="scratchpad-textarea" placeholder="Type your personal notes, formulas, or key interview reminders here... Auto-saved to your profile." oninput="handleScratchpadInput()"></textarea>
+            </div>
+        </div>
+
+        <!-- Modal Bottom Footer -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:10px; border-top:1px solid var(--border-default); flex-wrap:wrap; gap:8px;">
+            <div style="font-size:12px; color:var(--text-secondary);">
+                💡 Tip: Use the <strong>AI Takeaways</strong> and <strong>Knowledge Quiz</strong> tabs to self-test before marking complete.
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-secondary btn-sm" onclick="closeResourceReader()">Close Reader</button>
+            </div>
         </div>
     </div>
 </div>
@@ -2851,6 +2936,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=4.1"></script>
+<script src="/static/app.js?v=4.2"></script>
 </body>
 </html>
