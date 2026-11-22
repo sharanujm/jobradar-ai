@@ -489,3 +489,4 @@ python -m uvicorn server:app --reload --port 8765
   <p><strong>JobRadar AI 2.0</strong> &bull; Intelligent Autonomous Career Platform</p>
   <p>Designed and Developed with ❤️ by <strong>Sharanu</strong></p>
 </div>
+

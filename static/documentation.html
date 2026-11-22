@@ -484,8 +484,11 @@
             <button class="btn btn-primary" onclick="downloadMarkdownFile()">
                 <span>📥</span> Download Markdown (.md)
             </button>
-            <button class="btn btn-primary" style="background:#10b981;" onclick="window.print()">
-                <span>🖨️</span> Download as PDF / Print
+            <a href="/api/docs/download-pdf" class="btn btn-primary" style="background:#10b981; text-decoration:none;" download="JobRadar_AI_2.0_Complete_Documentation.pdf">
+                <span>📄</span> Download PDF
+            </a>
+            <button class="btn btn-secondary" onclick="window.print()" title="Print or Save via Browser PDF">
+                <span>🖨️</span> Print
             </button>
         </div>
     </header>
@@ -921,3 +924,4 @@ python -m uvicorn server:app --reload --port 8765</code></pre>
     </script>
 </body>
 </html>
+

@@ -564,6 +564,19 @@ async def download_markdown_documentation():
         )
     raise HTTPException(status_code=404, detail="Documentation markdown file not found")
 
+@app.get("/api/docs/download-pdf")
+async def download_pdf_documentation():
+    pdf_file = BASE_DIR / "JobRadar_AI_2.0_Complete_Documentation.pdf"
+    if not pdf_file.exists():
+        pdf_file = STATIC_DIR / "JobRadar_AI_2.0_Complete_Documentation.pdf"
+    if pdf_file.exists():
+        return FileResponse(
+            path=str(pdf_file),
+            filename="JobRadar_AI_2.0_Complete_Documentation.pdf",
+            media_type="application/pdf"
+        )
+    raise HTTPException(status_code=404, detail="PDF documentation not found")
+
 
 # ------------------------------------------------------------------------------
 # Authentication & User Profile Endpoints
