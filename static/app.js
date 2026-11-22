@@ -63,6 +63,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (inpTime) inpTime.value = savedTime;
         const sideTime = document.getElementById("sidebar-schedule-display");
         if (sideTime) sideTime.textContent = `Daily Digest: ${formatTimeTo12h(savedTime)}`;
+        const profTime = document.getElementById("profile-modal-time");
+        if (profTime) profTime.value = savedTime;
     }
     if (savedEmail) {
         const inpEmail = document.getElementById("auto-email-input");
@@ -401,11 +403,24 @@ async function handleOnboardLogin() {
 
         if (data.user) {
             state.currentUser = data.user;
-            localStorage.setItem("jobradar_active_user", JSON.stringify(data.user));
+            // Respect and preserve schedule time across logins
+            const localSavedTime = localStorage.getItem("jobradar_scheduled_time");
+            if (data.user.email_time) {
+                localStorage.setItem("jobradar_scheduled_time", data.user.email_time);
+            } else if (localSavedTime) {
+                state.currentUser.email_time = localSavedTime;
+                fetch("/api/automation/schedule", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: data.user.email, email_time: localSavedTime, daily_email: true })
+                }).catch(() => {});
+            }
+            localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
             const overlay = document.getElementById("auth-onboarding-screen");
             if (overlay) overlay.style.display = "none";
             showToast(`Welcome back, ${data.user.name || "User"}!`);
             renderUserHeader();
+            loadPipelineStatus();
             fetchJobs(true);
             fetchStats();
             loadTrackerJobs();
@@ -440,8 +455,11 @@ function openAuthModal(tab = "login") {
 
 function handleLogout() {
     closeProfileModal();
+    // Preserve the user's scheduled time so logged-out view never resets or shows a different time
+    const currentScheduleTime = state.currentUser?.email_time || localStorage.getItem("jobradar_scheduled_time") || "20:00";
     state.currentUser = null;
     localStorage.removeItem("jobradar_active_user");
+    localStorage.setItem("jobradar_scheduled_time", currentScheduleTime);
     renderUserHeader();
     openAuthModal("login");
     showToast("You have been signed out.");
@@ -582,8 +600,11 @@ function renderUserHeader() {
         if (autoEmailInput) autoEmailInput.value = u.email;
 
         const emailTime = u.email_time || localStorage.getItem("jobradar_scheduled_time") || "20:00";
+        localStorage.setItem("jobradar_scheduled_time", emailTime);
         if (sidebarScheduleEl) sidebarScheduleEl.textContent = `Daily Digest: ${formatTimeTo12h(emailTime)}`;
         if (inputScheduleTime) inputScheduleTime.value = emailTime;
+        const profileTimeInput = document.getElementById("profile-modal-time");
+        if (profileTimeInput) profileTimeInput.value = emailTime;
 
         if (autoEmailExp) autoEmailExp.value = u.email_experience_filter || "1_year";
         if (autoEmailRoles) {
@@ -646,7 +667,11 @@ function renderUserHeader() {
         if (sidebarEmailEl) sidebarEmailEl.textContent = "guest@jobradar.ai";
         if (autoEmailInput) autoEmailInput.value = "";
         if (autoEmailLocations) autoEmailLocations.value = "";
-        if (sidebarScheduleEl) sidebarScheduleEl.textContent = "Daily Digest: Not configured";
+        const preservedTime = localStorage.getItem("jobradar_scheduled_time") || "20:00";
+        if (sidebarScheduleEl) sidebarScheduleEl.textContent = `Daily Digest: ${formatTimeTo12h(preservedTime)}`;
+        if (inputScheduleTime) inputScheduleTime.value = preservedTime;
+        const profileTimeInput = document.getElementById("profile-modal-time");
+        if (profileTimeInput) profileTimeInput.value = preservedTime;
         if (sidebarSkillsCount) sidebarSkillsCount.textContent = "0";
         const studioSkillsCount = document.getElementById("studio-skills-count");
         if (studioSkillsCount) studioSkillsCount.textContent = "0 Skills";
@@ -900,9 +925,14 @@ async function saveProfileChanges() {
         const data = await res.json();
         if (data.user) {
             state.currentUser = data.user;
-            localStorage.setItem("jobradar_active_user", JSON.stringify(data.user));
+            if (time) {
+                localStorage.setItem("jobradar_scheduled_time", time);
+                state.currentUser.email_time = time;
+            }
+            localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
             renderUserHeader();
             closeProfileModal();
+            loadPipelineStatus();
             fetchJobs(true);
             showToast("✨ Profile, Telegram & application details saved successfully!");
         }
@@ -1915,10 +1945,20 @@ async function loadPipelineStatus() {
             // 2) localStorage.getItem("jobradar_scheduled_time")
             // 3) data.next_scheduled_digest
             const effectiveTime = state.currentUser?.email_time || localStorage.getItem("jobradar_scheduled_time") || data.next_scheduled_digest || "20:00";
+            
+            localStorage.setItem("jobradar_scheduled_time", effectiveTime);
+            if (state.currentUser && !state.currentUser.email_time) {
+                state.currentUser.email_time = effectiveTime;
+                localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
+            }
 
             if (nextDigestEl) nextDigestEl.textContent = `${effectiveTime} (${formatTimeTo12h(effectiveTime)})`;
             if (inputScheduleTime) {
                 inputScheduleTime.value = effectiveTime;
+            }
+            const profileTimeInput = document.getElementById("profile-modal-time");
+            if (profileTimeInput) {
+                profileTimeInput.value = effectiveTime;
             }
 
             // Sync preview scrape time with effectiveTime
@@ -2041,6 +2081,8 @@ async function saveCustomScheduleTime() {
     if (sideSchedule) sideSchedule.textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
     const nextDigestEl = document.getElementById("pipeline-next-digest");
     if (nextDigestEl) nextDigestEl.textContent = `${timeVal} (${formatTimeTo12h(timeVal)})`;
+    const profileTimeInput = document.getElementById("profile-modal-time");
+    if (profileTimeInput) profileTimeInput.value = timeVal;
 
     showToast(`Setting daily email alert for ${emailVal} at ${formatTimeTo12h(timeVal)}...`);
 

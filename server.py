@@ -673,7 +673,9 @@ async def update_profile_endpoint(req: ProfileUpdateRequest):
     if req.skills is not None:
         user_data["skills"] = req.skills
     if req.email_time is not None:
-        user_data["email_time"] = req.email_time
+        clean_sched_time = normalize_time_str(req.email_time)
+        user_data["email_time"] = clean_sched_time
+        set_system_setting("global_email_schedule_time", clean_sched_time)
     if req.daily_email is not None:
         user_data["daily_email"] = req.daily_email
     if req.telegram_bot_token is not None:
@@ -1229,15 +1231,10 @@ async def get_pipeline_status(email: Optional[str] = None):
     cursor.execute("SELECT COUNT(*) FROM jobs")
     total_jobs = cursor.fetchone()[0]
 
-    email_time = "20:00"
+    email_time = get_system_setting("global_email_schedule_time", "20:00") or "20:00"
     clean_email = (email or "").strip().lower()
     if clean_email:
         cursor.execute("SELECT email_time FROM users WHERE LOWER(email) = ? LIMIT 1", (clean_email,))
-        row = cursor.fetchone()
-        if row and row["email_time"]:
-            email_time = row["email_time"]
-    else:
-        cursor.execute("SELECT email_time FROM users WHERE daily_email = 1 ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         if row and row["email_time"]:
             email_time = row["email_time"]
@@ -1299,6 +1296,7 @@ async def update_schedule_endpoint(req: ScheduleRequest):
     clean_time = normalize_time_str(req.email_time)
     updated = update_user_schedule(req.email, clean_time, req.daily_email)
     clean_email = (req.email or "").strip().lower()
+    set_system_setting("global_email_schedule_time", clean_time)
     
     # Update config.yaml for default scheduler fallback
     try:
