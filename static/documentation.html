@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobRadar AI 2.0 &bull; System Architecture, APIs & Engineering Documentation</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
+    <style>
+        :root {
+            --bg-base: #0b0f19;
+            --bg-surface: #111827;
+            --bg-surface-elevated: #1f2937;
+            --border-default: #374151;
+            --border-subtle: #1f2937;
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --primary-glow: rgba(99, 102, 241, 0.15);
+            --accent: #ec4899;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --text-primary: #f9fafb;
+            --text-secondary: #d1d5db;
+            --text-muted: #9ca3af;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            line-height: 1.65;
+            font-size: 15px;
+            scroll-behavior: smooth;
+        }
+
+        /* Top Bar */
+        .top-navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-default);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 16px;
+            color: #fff;
+        }
+
+        .brand-title {
+            font-weight: 700;
+            font-size: 17px;
+            letter-spacing: -0.3px;
+        }
+
+        .brand-badge {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary-light);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 9999px;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            user-select: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--bg-surface-elevated);
+            color: var(--text-secondary);
+            border-color: var(--border-default);
+        }
+        .btn-secondary:hover {
+            background: #283548;
+            color: #fff;
+            border-color: var(--primary);
+        }
+
+        /* Layout Container */
+        .layout-container {
+            display: flex;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px 24px 60px;
+            gap: 36px;
+        }
+
+        /* Sidebar Table of Contents */
+        .doc-sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 75px;
+            height: calc(100vh - 95px);
+            overflow-y: auto;
+            padding-right: 12px;
+        }
+
+        .toc-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .toc-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .toc-list li a {
+            display: block;
+            padding: 6px 10px;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-decoration: none;
+            transition: all 0.15s ease;
+            border-left: 2px solid transparent;
+        }
+
+        .toc-list li a:hover {
+            color: #fff;
+            background: rgba(99, 102, 241, 0.1);
+            border-left-color: var(--primary);
+        }
+
+        /* Main Content */
+        .doc-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Document Header */
+        .doc-header-card {
+            background: linear-gradient(135deg, rgba(31, 41, 55, 0.7), rgba(17, 24, 39, 0.9));
+            border: 1px solid var(--border-default);
+            border-radius: 14px;
+            padding: 32px;
+            margin-bottom: 32px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .doc-header-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        h1.doc-title {
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #fff, #c7d2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.doc-subtitle {
+            font-size: 15px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+            max-width: 800px;
+        }
+
+        .doc-meta-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .meta-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+        }
+
+        .meta-tag strong {
+            color: #fff;
+        }
+
+        /* Headings & Content */
+        h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 40px 0 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-default);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #fff;
+        }
+
+        h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin: 24px 0 10px;
+            color: var(--primary-light);
+        }
+
+        p {
+            margin-bottom: 14px;
+            color: var(--text-secondary);
+            font-size: 14.5px;
+        }
+
+        ul, ol {
+            margin: 12px 0 18px 24px;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        /* Tables */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 20px 0 28px;
+            border-radius: 10px;
+            border: 1px solid var(--border-default);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13.5px;
+            background: var(--bg-surface);
+        }
+
+        th {
+            background: #1f2937;
+            padding: 12px 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-default);
+        }
+
+        td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(99, 102, 241, 0.04);
+        }
+
+        /* Code Blocks & Badges */
+        code {
+            font-family: var(--font-mono);
+            background: #1e293b;
+            color: #cbd5e1;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12.5px;
+        }
+
+        pre {
+            background: #0f172a;
+            border: 1px solid var(--border-default);
+            border-radius: 10px;
+            padding: 16px;
+            margin: 16px 0 22px;
+            overflow-x: auto;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: #e2e8f0;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .badge-method {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .badge-get { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-post { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+        .badge-delete { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+        /* Architecture Card */
+        .arch-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .arch-diagram {
+            background: #090d16;
+            border: 1px dashed var(--border-default);
+            border-radius: 8px;
+            padding: 20px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.45;
+            color: #38bdf8;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        /* Pulse Heart */
+        .heart-pulse {
+            display: inline-block;
+            color: #ef4444;
+            animation: pulseAnim 1.8s infinite ease-in-out;
+        }
+        @keyframes pulseAnim {
+            0%, 100% { transform: scale(1); }
+            14% { transform: scale(1.25); }
+            28% { transform: scale(1); }
+            42% { transform: scale(1.18); }
+            70% { transform: scale(1); }
+        }
+
+        /* Creator Banner Footer */
+        .doc-footer {
+            margin-top: 60px;
+            padding: 24px;
+            border-top: 1px solid var(--border-default);
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .doc-footer strong {
+            color: #fff;
+        }
+
+        /* Print / PDF Optimized CSS */
+        @media print {
+            body {
+                background: #ffffff !important;
+                color: #000000 !important;
+                font-size: 12pt;
+            }
+            .top-navbar, .doc-sidebar, .action-buttons {
+                display: none !important;
+            }
+            .layout-container {
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                max-width: 100% !important;
+            }
+            .doc-main {
+                width: 100% !important;
+            }
+            .doc-header-card, .arch-card, .table-wrapper, pre {
+                background: #ffffff !important;
+                color: #000000 !important;
+                border: 1px solid #cccccc !important;
+                box-shadow: none !important;
+                page-break-inside: avoid;
+            }
+            h1, h2, h3 {
+                color: #000000 !important;
+                -webkit-text-fill-color: initial !important;
+                page-break-after: avoid;
+            }
+            p, li, td, th {
+                color: #333333 !important;
+            }
+            a {
+                text-decoration: underline;
+                color: #000000 !important;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .doc-sidebar {
+                display: none;
+            }
+            .layout-container {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP NAVIGATION -->
+    <header class="top-navbar">
+        <div class="brand-area">
+            <div class="brand-logo">&#10038;</div>
+            <span class="brand-title">JobRadar AI</span>
+            <span class="brand-badge">2.0 Docs &amp; Architecture</span>
+        </div>
+        <div class="action-buttons">
+            <a href="/" class="btn btn-secondary">
+                <span>&larr;</span> Back to Dashboard
+            </a>
+            <button class="btn btn-secondary" onclick="copyDocumentMarkdown()" id="btn-copy">
+                <span>📋</span> Copy Text
+            </button>
+            <button class="btn btn-primary" onclick="downloadMarkdownFile()">
+                <span>📥</span> Download Markdown (.md)
+            </button>
+            <button class="btn btn-primary" style="background:#10b981;" onclick="window.print()">
+                <span>🖨️</span> Download as PDF / Print
+            </button>
+        </div>
+    </header>
+
+    <div class="layout-container">
+
+        <!-- TABLE OF CONTENTS SIDEBAR -->
+        <aside class="doc-sidebar">
+            <div class="toc-title">Table of Contents</div>
+            <ul class="toc-list">
+                <li><a href="#summary">1. Executive Summary</a></li>
+                <li><a href="#architecture">2. High-Level Architecture</a></li>
+                <li><a href="#techstack">3. Complete Technology Stack</a></li>
+                <li><a href="#subsystems">4. Core Subsystems</a></li>
+                <li><a href="#scraper">4.1 Multi-Board Scraper</a></li>
+                <li><a href="#experience">4.2 Experience NLP Engine</a></li>
+                <li><a href="#ats">4.3 Resume ATS Studio</a></li>
+                <li><a href="#email-engine">4.4 Daily Email &amp; Pre-Scrape</a></li>
+                <li><a href="#email-transport">4.5 Cloud HTTPS Email Transport</a></li>
+                <li><a href="#kanban">4.6 Application Tracker</a></li>
+                <li><a href="#apis">5. REST API Specification</a></li>
+                <li><a href="#database">6. Database &amp; WAL Concurrency</a></li>
+                <li><a href="#devops">7. Cloud Deployment &amp; DevOps</a></li>
+                <li><a href="#security">8. Security &amp; Resilience</a></li>
+                <li><a href="#quickstart">9. Local Setup &amp; Quickstart</a></li>
+            </ul>
+        </aside>
+
+        <!-- MAIN DOCUMENT CONTENT -->
+        <main class="doc-main">
+
+            <!-- HEADER CARD -->
+            <div class="doc-header-card">
+                <h1 class="doc-title">JobRadar AI 2.0 &bull; System Architecture &amp; Engineering Whitepaper</h1>
+                <p class="doc-subtitle">
+                    Autonomous multi-source job discovery, strict experience boundaries, ATS resume scoring, non-blocking SQLite WAL concurrency, and scheduled cloud email delivery platform.
+                </p>
+                <div class="doc-meta-tags">
+                    <span class="meta-tag">Lead Engineer: <strong>Sharanu</strong> <span class="heart-pulse">❤️</span></span>
+                    <span class="meta-tag">Status: <strong>Production Live (v2.0)</strong></span>
+                    <span class="meta-tag">Runtime: <strong>Python 3.11 / FastAPI / Uvicorn</strong></span>
+                    <span class="meta-tag">Database: <strong>SQLite 3 (WAL Mode, 60s Busy Timeout)</strong></span>
+                    <span class="meta-tag">Target Region: <strong>India &bull; Tech Hubs &amp; Remote</strong></span>
+                </div>
+            </div>
+
+            <!-- 1. SUMMARY -->
+            <section id="summary">
+                <h2>1. Executive Summary &amp; Product Vision</h2>
+                <p>
+                    <strong>JobRadar AI 2.0</strong> is an autonomous career acceleration engine designed specifically for technical job hunters in India. It eliminates manual job hunting fatigue by aggregating freshly posted engineering roles across multiple platforms, extracting exact experience boundaries, scoring candidate resume alignment, and dispatching curated email digests.
+                </p>
+                <ul>
+                    <li><strong>Continuous Ingestion:</strong> Crawls LinkedIn, Indeed, Naukri, Glassdoor, Internshala, and Google Jobs.</li>
+                    <li><strong>Zero-Spam Experience Parser:</strong> Guarantees freshers (0&ndash;2 years) are never shown jobs that secretly require 3&ndash;8 years.</li>
+                    <li><strong>Cloud Email Delivery over HTTPS:</strong> Bypasses cloud container SMTP firewall blocks using Resend &amp; Brevo HTTPS APIs (Port 443).</li>
+                    <li><strong>Full Career Suite:</strong> ATS Resume Matcher, Kanban Application Tracker, Cold Pitch Generator, Tech Study Vault, and AI Mock Interviews.</li>
+                </ul>
+            </section>
+
+            <!-- 2. ARCHITECTURE -->
+            <section id="architecture">
+                <h2>2. High-Level Architecture &amp; Data Pipeline</h2>
+                <div class="arch-card">
+                    <div class="arch-diagram">
++---------------------------------------------------------------------------------------+
+|                                     JOB PLATFORMS                                     |
+|  [LinkedIn]   [Indeed]   [Glassdoor]   [Google Jobs]   [Naukri]   [Internshala]       |
++---------------------------------------------------------------------------------------+
+                                           |
+                                  (JobSpy & curl_cffi)
+                                           v
++---------------------------------------------------------------------------------------+
+|                                INGESTION & FILTER ENGINE                              |
+|  - Title Keyword Boundaries & Negative Filters (src/filter.py)                        |
+|  - Deterministic Deduplication: SHA-256 (site | title | company | url)                |
+|  - Strict Experience Classifier: min_exp, max_exp, exp_category                       |
++---------------------------------------------------------------------------------------+
+                                           |
+                                           v
++---------------------------------------------------------------------------------------+
+|                       SQLITE 3 DATABASE (WAL MODE, 60s TIMEOUT)                       |
+|  - jobs: 6,700+ rows, exp indices                                                    |
+|  - users: Profiles, skills, schedules, passwords                                      |
+|  - user_job_interactions: Saved, Applied, Interviewing, Offered                      |
+|  - user_job_deliveries: Per-user delivery history (prevents duplicate emails)        |
++---------------------------------------------------------------------------------------+
+           ^                                                               ^
+           |                                                               |
+(REST API Requests)                                              (Background Scheduler)
+           |                                                               |
++------------------------+                                      +------------------------+
+|   FASTAPI APPLICATION  |                                      |   SCHEDULER (IST)      |
+|  - 40+ REST Endpoints  |                                      |  - 30m Pre-Digest Scrape|
+|  - Resume ATS Studio   |                                      |  - 100-Job Catch-Up    |
++------------------------+                                      +------------------------+
+           |                                                               |
+           v                                                               v
++------------------------+                                      +------------------------+
+|  GLASSMORPHIC WEB SPA  |                                      |  HTTPS EMAIL ENGINE    |
+|  (index.html & app.js) |                                      |  (Port 443 Resend/Brevo|
++------------------------+                                      +------------------------+
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. TECH STACK -->
+            <section id="techstack">
+                <h2>3. Complete Technology Stack</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Layer</th>
+                                <th>Technology</th>
+                                <th>Role &amp; Architectural Purpose</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Backend Runtime</strong></td>
+                                <td>Python 3.11</td>
+                                <td>Asynchronous execution, scheduler loop, scraping processes</td>
+                            </tr>
+                            <tr>
+                                <td><strong>API Framework</strong></td>
+                                <td>FastAPI (v0.110+)</td>
+                                <td>High-throughput REST API with Pydantic request validation</td>
+                            </tr>
+                            <tr>
+                                <td><strong>ASGI Web Server</strong></td>
+                                <td>Uvicorn</td>
+                                <td>Production ASGI server handling concurrent client connections</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Database</strong></td>
+                                <td>SQLite 3 (WAL Mode)</td>
+                                <td>Zero-config relational database with 60-second busy timeout</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Scraping Engines</strong></td>
+                                <td>python-jobspy &amp; BeautifulSoup4</td>
+                                <td>Automated crawling for LinkedIn, Indeed, Glassdoor, Internshala</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Anti-Bot Client</strong></td>
+                                <td>curl_cffi</td>
+                                <td>Mimics browser TLS fingerprints to bypass Cloudflare gates</td>
+                            </tr>
+                            <tr>
+                                <td><strong>PDF Parser</strong></td>
+                                <td>pypdf</td>
+                                <td>Extracts text layers from resumes for ATS technical matching</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Cloud Email (HTTPS)</strong></td>
+                                <td>Resend &amp; Brevo APIs</td>
+                                <td>Sends scheduled HTML emails over Port 443 HTTPS (no SMTP block)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Frontend</strong></td>
+                                <td>HTML5, Vanilla ES6+, CSS3</td>
+                                <td>SPA with dark/light themes, multi-filtering, Kanban pipeline</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Hosting &amp; Edge</strong></td>
+                                <td>Render Cloud &amp; Cloudflare</td>
+                                <td>Auto-deploy container with global CDN &amp; SSL/TLS termination</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 4. CORE SUBSYSTEMS -->
+            <section id="subsystems">
+                <h2>4. Core Subsystems &amp; Deep-Dive Implementation</h2>
+
+                <h3 id="scraper">4.1 Multi-Board Job Scraping &amp; Anti-Bot Engine</h3>
+                <p>
+                    Aggregates fresh technical postings across 6 major portals. Uses <code>curl_cffi</code> to bypass TLS fingerprint detection and computes a deterministic SHA-256 hash for deduplication:
+                </p>
+                <pre><code>raw = f"{site.lower()}|{title.lower().strip()}|{company.lower().strip()}|{clean_url}"
+job_id = hashlib.sha256(raw.encode("utf-8")).hexdigest()</code></pre>
+
+                <h3 id="experience">4.2 Strict Experience Parsing &amp; Boundary Classifier</h3>
+                <p>
+                    Solves the widespread problem of senior jobs being labeled "Entry-Level". The engine applies a multi-stage classification pipeline:
+                </p>
+                <ul>
+                    <li><strong>URL Path Scanner:</strong> Detects experience ranges embedded in job slugs (e.g. <code>-3-to-8-years</code>, <code>-5-to-10-years</code>).</li>
+                    <li><strong>Title Seniority Heuristics:</strong> Reclassifies titles containing <code>SDE II</code>, <code>Senior</code>, <code>Lead</code>, <code>Principal</code>, or <code>Architect</code> into mid/senior buckets.</li>
+                    <li><strong>Contextual Snippet Parsing:</strong> Extracts exact numerical boundaries (<code>0&ndash;2 yrs</code> vs <code>3&ndash;6 yrs</code>) while discarding unrelated numbers (e.g. "5 days working").</li>
+                </ul>
+
+                <h3 id="ats">4.3 Resume Studio &amp; AI ATS Matcher</h3>
+                <p>
+                    Parses resumes using <code>pypdf</code> and matches against 100+ technical skills. Calculates match percentage based on:
+                </p>
+                <pre><code>Match Score = (Skill Match Rate &times; 0.60) + (Role Relevance &times; 0.25) + (Experience Alignment &times; 0.15)</code></pre>
+
+                <h3 id="email-engine">4.4 Automated Pre-Scrape &amp; Daily Email Engine (IST)</h3>
+                <p>
+                    Operates in <strong>Asia/Kolkata (IST)</strong>:
+                </p>
+                <ul>
+                    <li><strong>Pre-Digest Auto-Scrape:</strong> Launches a scraper 30 minutes before the candidate's scheduled email time.</li>
+                    <li><strong>Personalized Digest:</strong> Builds and delivers 100 fresh, unemailed India jobs matching the candidate's exact experience tier and tech stack.</li>
+                    <li><strong>Catch-Up Delivery:</strong> Automatically dispatches missed digests if the user changes their schedule to an earlier time.</li>
+                </ul>
+
+                <h3 id="email-transport">4.5 Cloud HTTPS Email Transport (Render Free Tier Safe)</h3>
+                <p>
+                    Cloud container hosts (Render, AWS, DigitalOcean) block outbound SMTP ports (25, 465, 587). JobRadar AI uses modern REST APIs over Port 443 HTTPS:
+                </p>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Transport Mode</th>
+                                <th>Endpoint / Protocol</th>
+                                <th>Port</th>
+                                <th>Firewall Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Resend API</strong></td>
+                                <td><code>https://api.resend.com/emails</code></td>
+                                <td>443 (HTTPS)</td>
+                                <td><span style="color:#10b981; font-weight:700;">100% OPEN &bull; Active</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Brevo API</strong></td>
+                                <td><code>https://api.brevo.com/v3/smtp/email</code></td>
+                                <td>443 (HTTPS)</td>
+                                <td><span style="color:#10b981; font-weight:700;">100% OPEN &bull; Backup</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Gmail SMTP</strong></td>
+                                <td><code>smtp.gmail.com</code> (SSL/TLS)</td>
+                                <td>465 / 587</td>
+                                <td><span style="color:#ef4444; font-weight:700;">BLOCKED on Free Cloud</span> (Local Only)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 id="kanban">4.6 Application Kanban Tracker</h3>
+                <p>
+                    Tracks job applications across state transitions:
+                    <code>Wishlist &rarr; Applied &rarr; Interviewing &rarr; Offered / Rejected</code>.
+                    Includes interview dates, custom candidate notes, and conversion analytics.
+                </p>
+            </section>
+
+            <!-- 5. APIS -->
+            <section id="apis">
+                <h2>5. REST API Specification</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Method</th>
+                                <th>Endpoint</th>
+                                <th>Parameters / Payload</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/auth/login</code></td>
+                                <td><code>{email, password}</code></td>
+                                <td>Authenticates user credentials</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/auth/signup</code></td>
+                                <td><code>{email, password, name, target_role}</code></td>
+                                <td>Registers a new candidate account</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-get">GET</span></td>
+                                <td><code>/api/jobs</code></td>
+                                <td><code>search, experience, location, site, limit</code></td>
+                                <td>Multi-filter jobs query engine</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/user/resume/upload</code></td>
+                                <td><code>multipart/form-data (file, email)</code></td>
+                                <td>Parses resume PDF &amp; extracts skills</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-get">GET</span></td>
+                                <td><code>/api/tracker</code></td>
+                                <td><code>?email=...</code></td>
+                                <td>Fetches Kanban pipeline tracking items</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/tracker/update</code></td>
+                                <td><code>{user_email, job_id, status, notes}</code></td>
+                                <td>Updates application pipeline stage</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/ai/generate-pitch</code></td>
+                                <td><code>{job_id, pitch_type}</code></td>
+                                <td>Generates customized recruiter cold pitch</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/automation/schedule</code></td>
+                                <td><code>{email, email_time, daily_email}</code></td>
+                                <td>Updates candidate daily digest schedule</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/automation/test-email</code></td>
+                                <td><code>{recipient_email}</code></td>
+                                <td>Sends live test email over HTTPS</td>
+                            </tr>
+                            <tr>
+                                <td><span class="badge-method badge-post">POST</span></td>
+                                <td><code>/api/interview/start</code></td>
+                                <td><code>{job_id, role}</code></td>
+                                <td>Launches role-tailored AI mock interview</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- 6. DATABASE -->
+            <section id="database">
+                <h2>6. Database Architecture &amp; WAL Concurrency</h2>
+                <p>
+                    To eliminate <code>sqlite3.OperationalError: database is locked</code>, the system configures:
+                </p>
+                <pre><code>def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db_path), timeout=60.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")       # Non-blocking concurrent reads & writes
+    conn.execute("PRAGMA busy_timeout = 60000;")     # Wait up to 60s instead of failing
+    conn.execute("PRAGMA synchronous = NORMAL;")     # Fast and safe disk I/O
+    return conn</code></pre>
+            </section>
+
+            <!-- 7. DEVOPS -->
+            <section id="devops">
+                <h2>7. Cloud Deployment &amp; DevOps</h2>
+                <p>
+                    Configured for automated Git-driven deployments on Render via <code>render.yaml</code>:
+                </p>
+                <pre><code>services:
+  - type: web
+    name: jobradar-ai
+    runtime: python
+    plan: free
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0</code></pre>
+            </section>
+
+            <!-- 8. SECURITY -->
+            <section id="security">
+                <h2>8. Security, Performance &amp; Resilience</h2>
+                <ul>
+                    <li><strong>Protected Credentials:</strong> Passwords hashed with SHA-256; API keys protected in admin cards.</li>
+                    <li><strong>Connection Safety:</strong> All queries enclosed in <code>try ... finally: conn.close()</code> to prevent open locks.</li>
+                    <li><strong>Safe Client Parsing:</strong> <code>safeParseResponse</code> prevents <code>Unexpected token 'I'</code> during server wakeups.</li>
+                </ul>
+            </section>
+
+            <!-- 9. QUICKSTART -->
+            <section id="quickstart">
+                <h2>9. Local Setup &amp; Quickstart</h2>
+                <pre><code># 1. Clone repository
+git clone https://github.com/sharanujm/jobradar-ai.git
+cd "Job automation"
+
+# 2. Set up virtual environment
+python -m venv venv
+venv\Scripts\activate      # Windows
+source venv/bin/activate   # Linux/macOS
+
+# 3. Install requirements
+pip install -r requirements.txt
+
+# 4. Start local development server
+python -m uvicorn server:app --reload --port 8765</code></pre>
+                <p>Open <a href="http://localhost:8765" target="_blank" style="color:var(--primary-light);">http://localhost:8765</a> to explore the live dashboard.</p>
+            </section>
+
+            <!-- FOOTER -->
+            <footer class="doc-footer">
+                <p>JobRadar AI 2.0 &bull; System Architecture &amp; Engineering Whitepaper</p>
+                <p style="margin-top:4px;">
+                    Designed and Developed with <span class="heart-pulse">❤️</span> by <strong>Sharanu</strong>
+                </p>
+            </footer>
+
+        </main>
+    </div>
+
+    <script>
+        function downloadMarkdownFile() {
+            window.location.href = '/api/docs/download-markdown';
+        }
+
+        async function copyDocumentMarkdown() {
+            try {
+                const res = await fetch('/api/docs/download-markdown');
+                const text = await res.text();
+                await navigator.clipboard.writeText(text);
+                const btn = document.getElementById('btn-copy');
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<span>✅</span> Copied!';
+                btn.style.borderColor = '#10b981';
+                setTimeout(() => {
+                    btn.innerHTML = orig;
+                    btn.style.borderColor = '';
+                }, 2000);
+            } catch (e) {
+                alert('Could not copy text automatically: ' + e);
+            }
+        }
+    </script>
+</body>
+</html>

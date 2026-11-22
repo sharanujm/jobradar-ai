@@ -544,6 +544,26 @@ async def serve_index():
         return response
     return "<h1>JobRadar AI UI loading...</h1>"
 
+@app.get("/documentation", response_class=HTMLResponse)
+async def serve_documentation():
+    doc_file = STATIC_DIR / "documentation.html"
+    if doc_file.exists():
+        response = FileResponse(doc_file)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        return response
+    return "<h1>Documentation loading...</h1>"
+
+@app.get("/api/docs/download-markdown")
+async def download_markdown_documentation():
+    md_file = BASE_DIR / "JOBRADAR_AI_ARCHITECTURE_AND_DOCS.md"
+    if md_file.exists():
+        return FileResponse(
+            path=str(md_file),
+            filename="JobRadar_AI_2.0_System_Architecture_Documentation.md",
+            media_type="text/markdown"
+        )
+    raise HTTPException(status_code=404, detail="Documentation markdown file not found")
+
 
 # ------------------------------------------------------------------------------
 # Authentication & User Profile Endpoints
