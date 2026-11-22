@@ -41,6 +41,7 @@ from src.study_vault import (
     get_resources_for_user, add_resource, 
     toggle_resource_completion, delete_resource, 
     update_resource_notes, get_resource_by_id, generate_ai_study_assist,
+    ask_ai_about_document,
     RESOURCES_DIR, init_study_vault_db
 )
 from src.filter import is_india_location
@@ -54,6 +55,22 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("JobRadarServer")
 
 app = FastAPI(title="JobRadar AI - Automated Job Search Platform")
+
+import sqlite3
+from fastapi import Request
+
+@app.exception_handler(sqlite3.OperationalError)
+async def sqlite_operational_exception_handler(request: Request, exc: sqlite3.OperationalError):
+    logger.error(f"SQLite Operational Error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Database is temporarily busy. Retrying automatically..."}
+        )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Database error: {str(exc)}"}
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -399,30 +416,35 @@ async def background_scheduler_worker():
 
         await asyncio.sleep(20)
 
+DEFAULT_EMAIL = "candidate@jobradar.ai"
+
 @app.on_event("startup")
 async def on_startup():
     try:
-        from src.database import init_db, backfill_jobs_experience
+        from src.database import init_db, backfill_jobs_experience, get_user_by_email, upsert_user
+        from src.study_vault import init_study_vault_db
         init_db()
+        init_study_vault_db()
+        
+        # Ensure default demo user exists
+        existing_default = get_user_by_email(DEFAULT_EMAIL)
+        if not existing_default:
+            upsert_user({
+                "email": DEFAULT_EMAIL,
+                "name": "Candidate",
+                "password": "password123",
+                "target_role": "Software Engineer",
+                "experience_level": "fresher",
+                "skills": ["Python", "JavaScript", "React", "SQL", "Git", "REST API", "HTML", "CSS"],
+                "daily_email": True,
+                "email_time": "20:00"
+            })
+        
+        # Non-blocking backfill in thread
         asyncio.create_task(asyncio.to_thread(backfill_jobs_experience, force=False))
     except Exception as e:
-        logger.error(f"Startup experience backfill error: {e}")
+        logger.error(f"Startup initialization error: {e}", exc_info=True)
     asyncio.create_task(background_scheduler_worker())
-
-# Default user setup for onboarding
-DEFAULT_EMAIL = "candidate@jobradar.ai"
-existing_default = get_user_by_email(DEFAULT_EMAIL)
-if not existing_default:
-    upsert_user({
-        "email": DEFAULT_EMAIL,
-        "name": "Candidate",
-        "password": "password123",
-        "target_role": "Software Engineer",
-        "experience_level": "fresher",
-        "skills": ["Python", "JavaScript", "React", "SQL", "Git", "REST API", "HTML", "CSS"],
-        "daily_email": True,
-        "email_time": "20:00"
-    })
 
 # Pydantic models
 class LoginRequest(BaseModel):
@@ -904,10 +926,12 @@ class PitchRequest(BaseModel):
 @app.post("/api/ai/generate-pitch")
 async def generate_pitch_endpoint(req: PitchRequest):
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
 
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -969,10 +993,12 @@ async def send_telegram_job_alert_endpoint(req: TelegramJobAlertRequest):
         raise HTTPException(status_code=400, detail="Telegram bot token and chat ID not configured.")
 
     conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-    job_row = c.fetchone()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
+        job_row = c.fetchone()
+    finally:
+        conn.close()
     if not job_row:
         raise HTTPException(status_code=404, detail="Job not found.")
 
@@ -1107,10 +1133,12 @@ async def generate_custom_autofill_answers(req: AutofillCustomRequest):
 async def get_application_autofill(job_id: str, email: str = DEFAULT_EMAIL):
     user = get_user_by_email(email) or {}
     conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-    row = c.fetchone()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        row = c.fetchone()
+    finally:
+        conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Job not found.")
     job = dict(row)
@@ -1208,18 +1236,20 @@ async def update_auto_scrape_settings(req: AutoScrapeSettingsRequest):
 async def get_pipeline_status(email: Optional[str] = None):
     global SCAN_STATE
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM jobs")
-    total_jobs = cursor.fetchone()[0]
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM jobs")
+        total_jobs = cursor.fetchone()[0]
 
-    email_time = get_system_setting("global_email_schedule_time", "20:00") or "20:00"
-    clean_email = (email or "").strip().lower()
-    if clean_email:
-        cursor.execute("SELECT email_time FROM users WHERE LOWER(email) = ? LIMIT 1", (clean_email,))
-        row = cursor.fetchone()
-        if row and row["email_time"]:
-            email_time = row["email_time"]
-    conn.close()
+        email_time = get_system_setting("global_email_schedule_time", "20:00") or "20:00"
+        clean_email = (email or "").strip().lower()
+        if clean_email:
+            cursor.execute("SELECT email_time FROM users WHERE LOWER(email) = ? LIMIT 1", (clean_email,))
+            row = cursor.fetchone()
+            if row and row["email_time"]:
+                email_time = row["email_time"]
+    finally:
+        conn.close()
 
     lead_min = int(SCAN_STATE.get("lead_minutes", 30))
     next_scrape = get_time_minus_minutes(email_time, lead_min)
@@ -1482,7 +1512,11 @@ class ResourceNotesRequest(BaseModel):
 
 class ResourceAIAssistRequest(BaseModel):
     resource_id: int
-    action: str = "takeaways"  # "takeaways" or "quiz"
+    action: str = "takeaways"  # "takeaways", "quiz", "flashcards", "all"
+
+class ResourceAskAIRequest(BaseModel):
+    resource_id: int
+    question: str
 
 @app.get("/api/resources")
 async def get_resources_endpoint(email: str = DEFAULT_EMAIL):
@@ -1547,6 +1581,10 @@ async def save_resource_notes_endpoint(req: ResourceNotesRequest):
 async def ai_study_assist_endpoint(req: ResourceAIAssistRequest):
     result = generate_ai_study_assist(req.resource_id, req.action)
     return result
+
+@app.post("/api/resources/ask-ai")
+async def ask_ai_endpoint(req: ResourceAskAIRequest):
+    return ask_ai_about_document(req.resource_id, req.question)
 
 @app.delete("/api/resources/{resource_id}")
 async def delete_resource_endpoint(resource_id: int, email: str = DEFAULT_EMAIL):
@@ -1636,10 +1674,12 @@ async def get_referral_hub_endpoint(
     company_keyword: str = Query("")
 ):
     conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-    row = c.fetchone()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        row = c.fetchone()
+    finally:
+        conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
     job = dict(row)
@@ -1653,10 +1693,12 @@ async def get_referral_hub_endpoint(
 @app.post("/api/referral/generate")
 async def generate_referral_endpoint(req: ReferralHubRequest):
     conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-    row = c.fetchone()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
+        row = c.fetchone()
+    finally:
+        conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
     job = dict(row)
@@ -1723,12 +1765,14 @@ async def start_interview_endpoint(req: InterviewStartRequest):
     job = {}
     if req.job_id:
         conn = get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-        row = c.fetchone()
-        conn.close()
-        if row:
-            job = dict(row)
+        try:
+            c = conn.cursor()
+            c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
+            row = c.fetchone()
+            if row:
+                job = dict(row)
+        finally:
+            conn.close()
     
     if not job:
         job = {

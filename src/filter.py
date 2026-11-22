@@ -123,9 +123,15 @@ def is_india_location(location: Any, site: Any = "") -> bool:
         if re.search(r'\b' + sc + r'\b', loc_clean) and (", in" in loc_clean or "in" in loc_clean or "," in loc_clean):
             return True
 
-    # 5. Platforms like Internshala / Naukri with Work from home / Remote
+    # 5. Indian Tech & Job Boards with Work from home / Remote / India
     site_clean = clean_text(site).lower()
-    if site_clean in ("internshala", "naukri") and ("work from home" in loc_clean or "remote" in loc_clean or "india" in loc_clean):
+    if site_clean in ("internshala", "naukri", "instahyre") and ("work from home" in loc_clean or "remote" in loc_clean or "india" in loc_clean):
+        return True
+
+    # 6. Global Remote Platforms where Indian developers can work remotely
+    if any(p in site_clean for p in ("remoteok", "remotive", "weworkremotely", "wwr", "arbeitnow")):
+        if any(r in loc_clean for r in ("remote", "anywhere", "worldwide", "global", "apac", "india", "work from home")):
+            return True
         return True
 
     return False

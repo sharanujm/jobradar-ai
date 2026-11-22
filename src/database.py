@@ -1,180 +1,249 @@
 import sqlite3
 import hashlib
 import json
+import logging
+import time
+import random
+import functools
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 
+logger = logging.getLogger("Database")
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "jobs.db"
 
-def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=60.0, check_same_thread=False)
+def get_connection(db_path: Path = DB_PATH, timeout: float = 30.0) -> sqlite3.Connection:
+    """Returns a new SQLite connection with busy timeout configured."""
+    conn = sqlite3.connect(str(db_path), timeout=timeout, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA busy_timeout = 60000;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)};")
     return conn
 
-def init_db(db_path: Path = DB_PATH) -> None:
-    """Initialize SQLite database schema and migrate columns if needed."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
+def with_db_retry(max_retries: int = 5, base_delay: float = 0.15):
+    """
+    Decorator that catches sqlite3.OperationalError: database is locked / busy
+    and transparently retries with exponential backoff and jitter.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_err = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    last_err = e
+                    err_msg = str(e).lower()
+                    if "locked" in err_msg or "busy" in err_msg:
+                        if attempt == max_retries - 1:
+                            logger.error(f"[DB LOCKED] {func.__name__} exhausted {max_retries} retries: {e}")
+                            raise
+                        sleep_time = (base_delay * (2 ** attempt)) + random.uniform(0.02, 0.08)
+                        logger.warning(f"[DB BUSY] {func.__name__} locked, retrying in {sleep_time:.2f}s (attempt {attempt+1}/{max_retries})...")
+                        time.sleep(sleep_time)
+                    else:
+                        raise
+            if last_err:
+                raise last_err
+        return wrapper
+    return decorator
 
-    # Jobs Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY,
-            site TEXT,
-            title TEXT,
-            company TEXT,
-            location TEXT,
-            job_url TEXT,
-            date_posted TEXT,
-            job_type TEXT,
-            salary TEXT,
-            is_remote INTEGER,
-            snippet TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            emailed_at TIMESTAMP NULL
-        )
-    """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_emailed ON jobs(emailed_at)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at)")
-
-    # Users Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE,
-            name TEXT,
-            password TEXT DEFAULT 'password123',
-            target_role TEXT DEFAULT 'Software Engineer',
-            experience_level TEXT DEFAULT 'fresher',
-            skills TEXT DEFAULT '[]',
-            resume_text TEXT DEFAULT '',
-            resume_filename TEXT DEFAULT '',
-            daily_email INTEGER DEFAULT 1,
-            email_time TEXT DEFAULT '20:00',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # User Job Interactions Table (Saved / Applied / Interviewing / Offered / Rejected)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_job_interactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT,
-            job_id TEXT,
-            status TEXT,
-            notes TEXT DEFAULT '',
-            applied_date TEXT DEFAULT '',
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_email, job_id)
-        )
-    """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_user ON user_job_interactions(user_email)")
-
-    # Multi-User Email Deliveries Table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_job_deliveries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT,
-            job_id TEXT,
-            delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_email, job_id)
-        )
-    """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_deliveries_user ON user_job_deliveries(user_email)")
-
-    # System Settings Table (SMTP credentials, schedule fallbacks, etc.)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS system_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-
-    # Seed default SMTP settings from environment or defaults if not present
+def _get_table_columns(cursor, table_name: str) -> set:
+    """Helper to retrieve existing column names of a table to avoid duplicate ALTER TABLE locks."""
     try:
-        import os
-        from dotenv import load_dotenv
-        load_dotenv(BASE_DIR / ".env")
-        s_email = os.getenv("SENDER_EMAIL", "").strip() or "sharanujm@gmail.com"
-        s_pass = os.getenv("SENDER_APP_PASSWORD", "").strip()
-        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('sender_email', ?)", (s_email,))
-        if s_pass:
-            cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('sender_password', ?)", (s_pass,))
-        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_host', 'smtp.gmail.com')")
-        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_port', '465')")
-        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('use_ssl', 'true')")
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        return {row[1] for row in cursor.fetchall()}
+    except Exception:
+        return set()
 
-        # Load from email_credentials.json if present
-        cred_file = BASE_DIR / "email_credentials.json"
-        if cred_file.exists():
+@with_db_retry(max_retries=6, base_delay=0.2)
+def init_db(db_path: Path = DB_PATH) -> None:
+    """Initialize SQLite database schema and migrate missing columns idempotently."""
+    conn = get_connection(db_path, timeout=60.0)
+    try:
+        cursor = conn.cursor()
+        # Set WAL mode and normal synchronous once
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+
+        # Jobs Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                site TEXT,
+                title TEXT,
+                company TEXT,
+                location TEXT,
+                job_url TEXT,
+                date_posted TEXT,
+                job_type TEXT,
+                salary TEXT,
+                is_remote INTEGER,
+                snippet TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                emailed_at TIMESTAMP NULL
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_emailed ON jobs(emailed_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at)")
+
+        # Users Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE,
+                name TEXT,
+                password TEXT DEFAULT 'password123',
+                target_role TEXT DEFAULT 'Software Engineer',
+                experience_level TEXT DEFAULT 'fresher',
+                skills TEXT DEFAULT '[]',
+                resume_text TEXT DEFAULT '',
+                resume_filename TEXT DEFAULT '',
+                daily_email INTEGER DEFAULT 1,
+                email_time TEXT DEFAULT '20:00',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # User Job Interactions Table (Saved / Applied / Interviewing / Offered / Rejected)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_job_interactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_email TEXT,
+                job_id TEXT,
+                status TEXT,
+                notes TEXT DEFAULT '',
+                applied_date TEXT DEFAULT '',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_email, job_id)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_user ON user_job_interactions(user_email)")
+
+        # Multi-User Email Deliveries Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_job_deliveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_email TEXT,
+                job_id TEXT,
+                delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_email, job_id)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_deliveries_user ON user_job_deliveries(user_email)")
+
+        # System Settings Table (SMTP credentials, schedule fallbacks, etc.)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
+        # Seed default SMTP settings from environment or defaults if not present
+        try:
+            import os
+            from dotenv import load_dotenv
+            load_dotenv(BASE_DIR / ".env")
+            s_email = os.getenv("SENDER_EMAIL", "").strip() or "sharanujm@gmail.com"
+            s_pass = os.getenv("SENDER_APP_PASSWORD", "").strip()
+            cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('sender_email', ?)", (s_email,))
+            if s_pass:
+                cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('sender_password', ?)", (s_pass,))
+            cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_host', 'smtp.gmail.com')")
+            cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('smtp_port', '465')")
+            cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('use_ssl', 'true')")
+
+            cred_file = BASE_DIR / "email_credentials.json"
+            if cred_file.exists():
+                try:
+                    with open(cred_file, "r", encoding="utf-8") as f:
+                        creds = json.load(f) or {}
+                    for k, v in creds.items():
+                        if v:
+                            cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (k, str(v)))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Idempotent Column Migrations: ONLY run ALTER TABLE if column does NOT already exist!
+        user_cols = _get_table_columns(cursor, "users")
+        interaction_cols = _get_table_columns(cursor, "user_job_interactions")
+        job_cols = _get_table_columns(cursor, "jobs")
+
+        interactions_to_add = [
+            ("notes", "ALTER TABLE user_job_interactions ADD COLUMN notes TEXT DEFAULT ''"),
+            ("applied_date", "ALTER TABLE user_job_interactions ADD COLUMN applied_date TEXT DEFAULT ''"),
+        ]
+        for col_name, sql in interactions_to_add:
+            if col_name not in interaction_cols:
+                try:
+                    cursor.execute(sql)
+                except Exception:
+                    pass
+
+        users_to_add = [
+            ("password", "ALTER TABLE users ADD COLUMN password TEXT DEFAULT 'password123'"),
+            ("email_time", "ALTER TABLE users ADD COLUMN email_time TEXT DEFAULT '20:00'"),
+            ("daily_email", "ALTER TABLE users ADD COLUMN daily_email INTEGER DEFAULT 1"),
+            ("telegram_bot_token", "ALTER TABLE users ADD COLUMN telegram_bot_token TEXT DEFAULT ''"),
+            ("telegram_chat_id", "ALTER TABLE users ADD COLUMN telegram_chat_id TEXT DEFAULT ''"),
+            ("telegram_alerts", "ALTER TABLE users ADD COLUMN telegram_alerts INTEGER DEFAULT 0"),
+            ("phone", "ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''"),
+            ("github_url", "ALTER TABLE users ADD COLUMN github_url TEXT DEFAULT ''"),
+            ("linkedin_url", "ALTER TABLE users ADD COLUMN linkedin_url TEXT DEFAULT ''"),
+            ("portfolio_url", "ALTER TABLE users ADD COLUMN portfolio_url TEXT DEFAULT ''"),
+            ("years_experience", "ALTER TABLE users ADD COLUMN years_experience TEXT DEFAULT '0-1'"),
+            ("email_experience_filter", "ALTER TABLE users ADD COLUMN email_experience_filter TEXT DEFAULT '1_year'"),
+            ("email_roles", "ALTER TABLE users ADD COLUMN email_roles TEXT DEFAULT '[\"Software Engineer\"]'"),
+            ("email_languages", "ALTER TABLE users ADD COLUMN email_languages TEXT DEFAULT '[\"Python\"]'"),
+            ("notice_period", "ALTER TABLE users ADD COLUMN notice_period TEXT DEFAULT 'Immediate'"),
+            ("expected_ctc", "ALTER TABLE users ADD COLUMN expected_ctc TEXT DEFAULT ''"),
+            ("college_name", "ALTER TABLE users ADD COLUMN college_name TEXT DEFAULT ''"),
+            ("email_locations", "ALTER TABLE users ADD COLUMN email_locations TEXT DEFAULT '[]'"),
+            ("current_city", "ALTER TABLE users ADD COLUMN current_city TEXT DEFAULT 'Bengaluru, India'"),
+            ("work_authorization", "ALTER TABLE users ADD COLUMN work_authorization TEXT DEFAULT 'Authorized to work (Citizen/PR)'"),
+            ("visa_sponsorship", "ALTER TABLE users ADD COLUMN visa_sponsorship TEXT DEFAULT 'No'"),
+            ("summary_bio", "ALTER TABLE users ADD COLUMN summary_bio TEXT DEFAULT ''"),
+            ("last_digest_date", "ALTER TABLE users ADD COLUMN last_digest_date TEXT DEFAULT ''"),
+            ("last_digest_at", "ALTER TABLE users ADD COLUMN last_digest_at TEXT DEFAULT ''")
+        ]
+        for col_name, sql in users_to_add:
+            if col_name not in user_cols:
+                try:
+                    cursor.execute(sql)
+                except Exception:
+                    pass
+
+        jobs_to_add = [
+            ("min_exp", "ALTER TABLE jobs ADD COLUMN min_exp REAL DEFAULT NULL"),
+            ("max_exp", "ALTER TABLE jobs ADD COLUMN max_exp REAL DEFAULT NULL"),
+            ("exp_category", "ALTER TABLE jobs ADD COLUMN exp_category TEXT DEFAULT '1_year'")
+        ]
+        for col_name, sql in jobs_to_add:
+            if col_name not in job_cols:
+                try:
+                    cursor.execute(sql)
+                except Exception:
+                    pass
+
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_jobs_exp ON jobs(exp_category)",
+            "CREATE INDEX IF NOT EXISTS idx_jobs_minexp ON jobs(min_exp)",
+            "CREATE INDEX IF NOT EXISTS idx_jobs_location ON jobs(location)",
+            "CREATE INDEX IF NOT EXISTS idx_jobs_site ON jobs(site)"
+        ]:
             try:
-                with open(cred_file, "r", encoding="utf-8") as f:
-                    creds = json.load(f) or {}
-                for k, v in creds.items():
-                    if v:
-                        cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (k, str(v)))
+                cursor.execute(idx_sql)
             except Exception:
                 pass
-    except Exception:
-        pass
 
-    # Migrations for existing databases
-    for col_sql in [
-        "ALTER TABLE user_job_interactions ADD COLUMN notes TEXT DEFAULT ''",
-        "ALTER TABLE user_job_interactions ADD COLUMN applied_date TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN password TEXT DEFAULT 'password123'",
-        "ALTER TABLE users ADD COLUMN email_time TEXT DEFAULT '20:00'",
-        "ALTER TABLE users ADD COLUMN daily_email INTEGER DEFAULT 1",
-        "ALTER TABLE users ADD COLUMN telegram_bot_token TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN telegram_chat_id TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN telegram_alerts INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN github_url TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN linkedin_url TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN portfolio_url TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN years_experience TEXT DEFAULT '0-1'",
-        "ALTER TABLE users ADD COLUMN email_experience_filter TEXT DEFAULT '1_year'",
-        "ALTER TABLE users ADD COLUMN email_roles TEXT DEFAULT '[\"Software Engineer\"]'",
-        "ALTER TABLE users ADD COLUMN email_languages TEXT DEFAULT '[\"Python\"]'",
-        "ALTER TABLE users ADD COLUMN notice_period TEXT DEFAULT 'Immediate'",
-        "ALTER TABLE users ADD COLUMN expected_ctc TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN college_name TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN email_locations TEXT DEFAULT '[]'",
-        "ALTER TABLE users ADD COLUMN current_city TEXT DEFAULT 'Bengaluru, India'",
-        "ALTER TABLE users ADD COLUMN work_authorization TEXT DEFAULT 'Authorized to work (Citizen/PR)'",
-        "ALTER TABLE users ADD COLUMN visa_sponsorship TEXT DEFAULT 'No'",
-        "ALTER TABLE users ADD COLUMN summary_bio TEXT DEFAULT ''",
-        "ALTER TABLE jobs ADD COLUMN min_exp REAL DEFAULT NULL",
-        "ALTER TABLE jobs ADD COLUMN max_exp REAL DEFAULT NULL",
-        "ALTER TABLE jobs ADD COLUMN exp_category TEXT DEFAULT '1_year'",
-        "ALTER TABLE users ADD COLUMN last_digest_date TEXT DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN last_digest_at TEXT DEFAULT ''"
-    ]:
-        try:
-            cursor.execute(col_sql)
-        except Exception:
-            pass
-
-    for idx_sql in [
-        "CREATE INDEX IF NOT EXISTS idx_jobs_exp ON jobs(exp_category)",
-        "CREATE INDEX IF NOT EXISTS idx_jobs_minexp ON jobs(min_exp)",
-        "CREATE INDEX IF NOT EXISTS idx_jobs_location ON jobs(location)"
-    ]:
-        try:
-            cursor.execute(idx_sql)
-        except Exception:
-            pass
-
-    conn.commit()
-    conn.close()
-
-    # Backfill experience bounds on existing jobs if unparsed
-    backfill_jobs_experience(db_path)
+        conn.commit()
+    finally:
+        conn.close()
 
 def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> int:
     """Calculates and stores min_exp, max_exp, and exp_category for existing jobs."""
@@ -190,7 +259,6 @@ def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> in
             return 0
 
         from .filter import parse_job_experience
-        import time
         updated = 0
         batch = []
         for r in rows:
@@ -201,7 +269,7 @@ def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> in
                 conn.commit()
                 updated += len(batch)
                 batch = []
-                time.sleep(0.005)
+                time.sleep(0.01)
         if batch:
             cursor.executemany("UPDATE jobs SET min_exp = ?, max_exp = ?, exp_category = ? WHERE id = ?", batch)
             conn.commit()
@@ -217,11 +285,9 @@ def generate_job_id(site: str, title: str, company: str, job_url: str) -> str:
     raw = f"{site.lower()}|{title.lower().strip()}|{company.lower().strip()}|{clean_url}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+@with_db_retry()
 def save_job(job: dict, db_path: Path = DB_PATH) -> bool:
     """Saves a job if it does not already exist."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
-
     job_id = job.get("id") or generate_job_id(
         job.get("site", "unknown"),
         job.get("title", ""),
@@ -236,7 +302,9 @@ def save_job(job: dict, db_path: Path = DB_PATH) -> bool:
         from .filter import parse_job_experience
         min_exp, max_exp, exp_category = parse_job_experience(job.get("title", ""), job.get("snippet", ""), job.get("job_url", ""))
 
+    conn = get_connection(db_path)
     try:
+        cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO jobs (
                 id, site, title, company, location, job_url, 
@@ -266,22 +334,26 @@ def save_job(job: dict, db_path: Path = DB_PATH) -> bool:
     finally:
         conn.close()
 
+@with_db_retry()
 def get_unemailed_jobs(limit: int = 100, db_path: Path = DB_PATH) -> List[Dict]:
     """Legacy global unemailed jobs fetcher (filtered to India)."""
     from .filter import is_india_location
     conn = get_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT * FROM jobs 
-        WHERE emailed_at IS NULL 
-        ORDER BY created_at DESC, date_posted DESC
-        LIMIT ?
-    """, (limit * 2,))
-    rows = cursor.fetchall()
-    jobs = [dict(row) for row in rows if is_india_location(dict(row).get("location"), dict(row).get("site"))]
-    conn.close()
-    return jobs[:limit]
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM jobs 
+            WHERE emailed_at IS NULL 
+            ORDER BY created_at DESC, date_posted DESC
+            LIMIT ?
+        """, (limit * 2,))
+        rows = cursor.fetchall()
+        jobs = [dict(row) for row in rows if is_india_location(dict(row).get("location"), dict(row).get("site"))]
+        return jobs[:limit]
+    finally:
+        conn.close()
 
+@with_db_retry()
 def get_unemailed_jobs_for_user(
     user_email: str, 
     limit: int = 100, 
@@ -298,22 +370,23 @@ def get_unemailed_jobs_for_user(
     experience level, target roles, programming languages/tech stack, and preferred locations.
     """
     from .filter import is_india_location, matches_email_filter, get_job_experience_badge
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     clean_email = (user_email or "").strip().lower()
-
-    # Fetch a generous candidate pool to allow strict multi-facet filtering
     fetch_pool_size = max(limit * 25, 4500)
-    cursor.execute("""
-        SELECT * FROM jobs 
-        WHERE id NOT IN (
-            SELECT job_id FROM user_job_deliveries WHERE LOWER(user_email) = ?
-        )
-        ORDER BY created_at DESC, date_posted DESC
-        LIMIT ?
-    """, (clean_email, fetch_pool_size))
-    rows = cursor.fetchall()
-    conn.close()
+
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM jobs 
+            WHERE id NOT IN (
+                SELECT job_id FROM user_job_deliveries WHERE LOWER(user_email) = ?
+            )
+            ORDER BY created_at DESC, date_posted DESC
+            LIMIT ?
+        """, (clean_email, fetch_pool_size))
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
 
     matched = []
     for row in rows:
@@ -336,83 +409,93 @@ def get_unemailed_jobs_for_user(
 
     return matched
 
+@with_db_retry()
 def mark_jobs_as_emailed(job_ids: List[str], db_path: Path = DB_PATH) -> None:
     """Marks jobs as emailed globally (legacy support)."""
     if not job_ids:
         return
     conn = get_connection(db_path)
-    cursor = conn.cursor()
-    placeholders = ",".join("?" for _ in job_ids)
-    cursor.execute(f"""
-        UPDATE jobs 
-        SET emailed_at = CURRENT_TIMESTAMP 
-        WHERE id IN ({placeholders})
-    """, job_ids)
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in job_ids)
+        cursor.execute(f"""
+            UPDATE jobs 
+            SET emailed_at = CURRENT_TIMESTAMP 
+            WHERE id IN ({placeholders})
+        """, job_ids)
+        conn.commit()
+    finally:
+        conn.close()
 
+@with_db_retry()
 def mark_jobs_delivered_for_user(user_email: str, job_ids: List[str], db_path: Path = DB_PATH) -> None:
     """Records that specific job IDs were delivered to a given user email."""
     if not job_ids or not user_email:
         return
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     clean_email = user_email.strip().lower()
-    for jid in job_ids:
-        try:
-            cursor.execute("""
-                INSERT OR IGNORE INTO user_job_deliveries (user_email, job_id, delivered_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            """, (clean_email, str(jid)))
-        except Exception:
-            pass
-    conn.commit()
-    conn.close()
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        for jid in job_ids:
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO user_job_deliveries (user_email, job_id, delivered_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (clean_email, str(jid)))
+            except Exception:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
 
+@with_db_retry()
 def get_stats(db_path: Path = DB_PATH, user_email: str = None) -> Dict[str, int]:
     """Returns database counts and user-specific tracking numbers."""
     conn = get_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM jobs")
-    total = cursor.fetchone()[0]
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM jobs")
+        total = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM jobs WHERE emailed_at IS NOT NULL")
-    emailed = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM jobs WHERE emailed_at IS NOT NULL")
+        emailed = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM jobs WHERE emailed_at IS NULL")
-    pending = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM jobs WHERE emailed_at IS NULL")
+        pending = cursor.fetchone()[0]
 
-    saved = 0
-    applied = 0
-    interviewing = 0
-    offered = 0
+        saved = 0
+        applied = 0
+        interviewing = 0
+        offered = 0
+        referrals = 0
 
-    if user_email:
-        clean_email = user_email.strip().lower()
-        cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND status = 'saved'", (clean_email,))
-        saved = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND status = 'applied'", (clean_email,))
-        applied = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND status = 'interviewing'", (clean_email,))
-        interviewing = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND (status = 'offered' OR status = 'offer')", (clean_email,))
-        offered = cursor.fetchone()[0]
+        if user_email:
+            clean_email = user_email.strip().lower()
+            cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND status = 'saved'", (clean_email,))
+            saved = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND status = 'applied'", (clean_email,))
+            applied = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND status = 'interviewing'", (clean_email,))
+            interviewing = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND (status = 'offered' OR status = 'offer')", (clean_email,))
+            offered = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND (status = 'referral' OR status = 'referral_requested')", (clean_email,))
+            referrals = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM user_job_interactions WHERE LOWER(user_email) = ? AND (status = 'referral' OR status = 'referral_requested')", (clean_email,))
-        referrals = cursor.fetchone()[0]
+        return {
+            "total": total, 
+            "emailed": emailed, 
+            "pending": pending, 
+            "saved": saved, 
+            "applied": applied,
+            "referrals": referrals,
+            "interviewing": interviewing,
+            "offered": offered
+        }
+    finally:
+        conn.close()
 
-    conn.close()
-    return {
-        "total": total, 
-        "emailed": emailed, 
-        "pending": pending, 
-        "saved": saved, 
-        "applied": applied,
-        "referrals": referrals,
-        "interviewing": interviewing,
-        "offered": offered
-    }
-
+@with_db_retry()
 def get_jobs_list(
     search: str = "",
     site: str = "",
@@ -431,9 +514,6 @@ def get_jobs_list(
     Retrieve jobs with full-text search, strict experience boundaries,
     location filtering (Bangalore, Hyderabad, Pune, Remote, etc.), and status tracking.
     """
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
-
     conditions = ["1=1"]
     params = []
 
@@ -443,14 +523,14 @@ def get_jobs_list(
         conditions.append("(LOWER(j.title) LIKE ? OR LOWER(j.company) LIKE ? OR LOWER(j.snippet) LIKE ? OR LOWER(j.location) LIKE ?)")
         params.extend([s, s, s, s])
 
-    # 2. Location Filtering (supports single or comma-separated multiple cities)
+    # 2. Location Filtering
     if location and location.strip().lower() not in ("all", "any", "all locations", "all cities"):
         loc_items = [l.strip().lower() for l in location.split(",") if l.strip() and l.strip().lower() not in ("all", "any", "all locations", "all cities")]
         if loc_items:
             loc_clauses = []
             for loc_clean in loc_items:
                 if loc_clean in ("remote", "work from home", "wfh"):
-                    loc_clauses.append("(j.is_remote = 1 OR LOWER(j.location) LIKE '%remote%' OR LOWER(j.title) LIKE '%remote%' OR LOWER(j.location) LIKE '%work from home%')")
+                    loc_clauses.append("(j.is_remote = 1 OR LOWER(j.location) LIKE '%remote%' OR LOWER(j.title) LIKE '%remote%' OR LOWER(j.location) LIKE '%work from home%' OR LOWER(j.location) LIKE '%worldwide%' OR LOWER(j.location) LIKE '%anywhere%')")
                 elif loc_clean in ("bangalore", "bengaluru", "karnataka"):
                     loc_clauses.append("(LOWER(j.location) LIKE '%bangalore%' OR LOWER(j.location) LIKE '%bengaluru%' OR LOWER(j.location) LIKE '%ka, in%' OR LOWER(j.location) LIKE '%karnataka%')")
                 elif loc_clean in ("hyderabad", "telangana"):
@@ -508,6 +588,9 @@ def get_jobs_list(
             for s_lower in site_items:
                 if s_lower == "google":
                     site_clauses.append("(LOWER(j.site) LIKE '%google%' OR LOWER(j.job_url) LIKE '%greenhouse%' OR LOWER(j.job_url) LIKE '%lever%' OR LOWER(j.job_url) LIKE '%workday%' OR LOWER(j.job_url) LIKE '%careers%' OR LOWER(j.site) LIKE '%company%' OR LOWER(j.site) LIKE '%web%')")
+                elif s_lower in ("instahyre", "remoteok", "remotive", "weworkremotely", "wwr", "arbeitnow"):
+                    site_clauses.append("(LOWER(j.site) LIKE ? OR LOWER(j.job_url) LIKE ?)")
+                    params.extend([f"%{s_lower}%", f"%{s_lower}%"])
                 else:
                     site_clauses.append("LOWER(j.site) = ?")
                     params.append(s_lower)
@@ -517,7 +600,7 @@ def get_jobs_list(
     if is_remote is True:
         conditions.append("j.is_remote = 1")
 
-    # 3. Strict Experience Boundaries (supports multiple selections, e.g. "1_year,fresher")
+    # 3. Strict Experience Boundaries
     if experience and experience.strip().lower() != "all":
         exp_items = [e.strip().lower() for e in experience.split(",") if e.strip() and e.strip().lower() != "all"]
         if exp_items:
@@ -590,7 +673,9 @@ def get_jobs_list(
     """
     fetch_params = [clean_email] + params + [limit, offset]
 
+    conn = get_connection(db_path)
     try:
+        cursor = conn.cursor()
         cursor.execute(count_sql, count_params)
         total_count = cursor.fetchone()[0]
 
@@ -603,7 +688,6 @@ def get_jobs_list(
     jobs = []
     for row in rows:
         jd = dict(row)
-        # Double safety filter in Python
         if experience and experience != "all" and not matches_experience_filter(jd, exp_filter=experience):
             continue
         jd["exp_badge"] = get_job_experience_badge(jd)
@@ -611,75 +695,78 @@ def get_jobs_list(
 
     return jobs, total_count
 
+@with_db_retry()
 def toggle_user_job_status(user_email: str, job_id: str, new_status: str, db_path: Path = DB_PATH) -> str:
     """Toggles or sets job status ('saved', 'applied', etc.)."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     clean_email = (user_email or "").strip().lower()
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (clean_email, job_id))
+        row = cursor.fetchone()
 
-    cursor.execute("SELECT status FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (clean_email, job_id))
-    row = cursor.fetchone()
+        current_status = row["status"] if row else None
+        result_status = new_status
 
-    current_status = row["status"] if row else None
-    result_status = new_status
+        if current_status == new_status:
+            cursor.execute("DELETE FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (clean_email, job_id))
+            result_status = ""
+        elif current_status:
+            applied_date = datetime.now().strftime("%Y-%m-%d") if new_status == "applied" else ""
+            cursor.execute("""
+                UPDATE user_job_interactions 
+                SET status = ?, applied_date = CASE WHEN ? != '' THEN ? ELSE applied_date END, updated_at = CURRENT_TIMESTAMP 
+                WHERE LOWER(user_email) = ? AND job_id = ?
+            """, (new_status, applied_date, applied_date, clean_email, job_id))
+        else:
+            applied_date = datetime.now().strftime("%Y-%m-%d") if new_status == "applied" else ""
+            cursor.execute("""
+                INSERT INTO user_job_interactions (user_email, job_id, status, applied_date) 
+                VALUES (?, ?, ?, ?)
+            """, (clean_email, job_id, new_status, applied_date))
 
-    if current_status == new_status:
-        # Toggle off
-        cursor.execute("DELETE FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (clean_email, job_id))
-        result_status = ""
-    elif current_status:
-        applied_date = datetime.now().strftime("%Y-%m-%d") if new_status == "applied" else ""
-        cursor.execute("""
-            UPDATE user_job_interactions 
-            SET status = ?, applied_date = CASE WHEN ? != '' THEN ? ELSE applied_date END, updated_at = CURRENT_TIMESTAMP 
-            WHERE LOWER(user_email) = ? AND job_id = ?
-        """, (new_status, applied_date, applied_date, clean_email, job_id))
-    else:
-        applied_date = datetime.now().strftime("%Y-%m-%d") if new_status == "applied" else ""
-        cursor.execute("""
-            INSERT INTO user_job_interactions (user_email, job_id, status, applied_date) 
-            VALUES (?, ?, ?, ?)
-        """, (clean_email, job_id, new_status, applied_date))
+        conn.commit()
+        return result_status
+    finally:
+        conn.close()
 
-    conn.commit()
-    conn.close()
-    return result_status
-
+@with_db_retry()
 def get_tracker_items_for_user(user_email: str, db_path: Path = DB_PATH) -> List[Dict]:
     """Returns all tracked jobs with full job metadata and notes."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     clean_email = (user_email or "").strip().lower()
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                u.id as interaction_id,
+                u.user_email,
+                u.job_id,
+                u.status,
+                COALESCE(u.notes, '') as notes,
+                COALESCE(u.applied_date, '') as applied_date,
+                u.updated_at,
+                j.site,
+                j.title,
+                j.company,
+                j.location,
+                j.job_url,
+                j.date_posted,
+                j.job_type,
+                j.salary,
+                j.is_remote,
+                j.snippet
+            FROM user_job_interactions u
+            JOIN jobs j ON u.job_id = j.id
+            WHERE LOWER(u.user_email) = ?
+            ORDER BY u.updated_at DESC
+        """, (clean_email,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
-    cursor.execute("""
-        SELECT 
-            u.id as interaction_id,
-            u.user_email,
-            u.job_id,
-            u.status,
-            COALESCE(u.notes, '') as notes,
-            COALESCE(u.applied_date, '') as applied_date,
-            u.updated_at,
-            j.site,
-            j.title,
-            j.company,
-            j.location,
-            j.job_url,
-            j.date_posted,
-            j.job_type,
-            j.salary,
-            j.is_remote,
-            j.snippet
-        FROM user_job_interactions u
-        JOIN jobs j ON u.job_id = j.id
-        WHERE LOWER(u.user_email) = ?
-        ORDER BY u.updated_at DESC
-    """, (clean_email,))
-    rows = cursor.fetchall()
-    items = [dict(row) for row in rows]
-    conn.close()
-    return items
-
+@with_db_retry()
 def update_tracker_stage(
     user_email: str, 
     job_id: str, 
@@ -689,75 +776,82 @@ def update_tracker_stage(
     db_path: Path = DB_PATH
 ) -> Dict:
     """Updates the pipeline stage and notes of a tracked job."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     clean_email = (user_email or "").strip().lower()
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (clean_email, job_id))
+        existing = cursor.fetchone()
 
-    cursor.execute("SELECT * FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (clean_email, job_id))
-    existing = cursor.fetchone()
+        cur_notes = existing["notes"] if existing and "notes" in existing.keys() and existing["notes"] else ""
+        cur_date = existing["applied_date"] if existing and "applied_date" in existing.keys() and existing["applied_date"] else ""
 
-    cur_notes = existing["notes"] if existing and "notes" in existing.keys() and existing["notes"] else ""
-    cur_date = existing["applied_date"] if existing and "applied_date" in existing.keys() and existing["applied_date"] else ""
+        final_notes = notes if notes is not None else cur_notes
+        final_date = applied_date if applied_date is not None else cur_date
+        if status == "applied" and not final_date:
+            final_date = datetime.now().strftime("%Y-%m-%d")
 
-    final_notes = notes if notes is not None else cur_notes
-    final_date = applied_date if applied_date is not None else cur_date
-    if status == "applied" and not final_date:
-        final_date = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("""
+            INSERT INTO user_job_interactions (user_email, job_id, status, notes, applied_date, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_email, job_id) DO UPDATE SET
+                status = excluded.status,
+                notes = excluded.notes,
+                applied_date = excluded.applied_date,
+                updated_at = CURRENT_TIMESTAMP
+        """, (clean_email, job_id, status, final_notes, final_date))
 
-    cursor.execute("""
-        INSERT INTO user_job_interactions (user_email, job_id, status, notes, applied_date, updated_at)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(user_email, job_id) DO UPDATE SET
-            status = excluded.status,
-            notes = excluded.notes,
-            applied_date = excluded.applied_date,
-            updated_at = CURRENT_TIMESTAMP
-    """, (clean_email, job_id, status, final_notes, final_date))
+        conn.commit()
+        return {"status": status, "notes": final_notes, "applied_date": final_date}
+    finally:
+        conn.close()
 
-    conn.commit()
-    conn.close()
-    return {"status": status, "notes": final_notes, "applied_date": final_date}
-
+@with_db_retry()
 def delete_tracker_item(user_email: str, job_id: str, db_path: Path = DB_PATH) -> bool:
     """Removes a job completely from the user's application tracker."""
     conn = get_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (user_email.strip().lower(), job_id))
-    conn.commit()
-    conn.close()
-    return True
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_job_interactions WHERE LOWER(user_email) = ? AND job_id = ?", (user_email.strip().lower(), job_id))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
 
 # User Management Functions
+
+@with_db_retry()
 def get_user_by_email(email: str, db_path: Path = DB_PATH) -> Optional[Dict]:
     conn = get_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email.strip().lower(),))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        u = dict(row)
-        for json_field in ("skills", "email_roles", "email_languages", "email_locations"):
-            try:
-                u[json_field] = json.loads(u.get(json_field) or "[]")
-            except Exception:
-                u[json_field] = []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email.strip().lower(),))
+        row = cursor.fetchone()
+        if row:
+            u = dict(row)
+            for json_field in ("skills", "email_roles", "email_languages", "email_locations"):
+                try:
+                    u[json_field] = json.loads(u.get(json_field) or "[]")
+                except Exception:
+                    u[json_field] = []
 
-        if not u.get("email_locations"):
-            u["email_locations"] = []
+            if not u.get("email_locations"):
+                u["email_locations"] = []
 
-        # Ensure strict sensible fallbacks for empty email roles/languages/experience
-        if not u.get("email_roles"):
-            tr = u.get("target_role") or "Software Engineer"
-            u["email_roles"] = [tr, "Python Developer", "Backend Developer"] if "software" in tr.lower() else [tr]
-        if not u.get("email_languages"):
-            user_skills = u.get("skills") or []
-            tech_kw = {"python", "sql", "javascript", "typescript", "java", "c++", "c#", "golang", "go", "react", "node", "nodejs", "vue", "angular", "django", "flask", "fastapi"}
-            langs = [s for s in user_skills if str(s).lower() in tech_kw]
-            u["email_languages"] = langs if langs else (user_skills[:4] if user_skills else ["Python", "SQL"])
-        if not u.get("email_experience_filter"):
-            u["email_experience_filter"] = "1_year"
-        return u
-    return None
+            if not u.get("email_roles"):
+                tr = u.get("target_role") or "Software Engineer"
+                u["email_roles"] = [tr, "Python Developer", "Backend Developer"] if "software" in tr.lower() else [tr]
+            if not u.get("email_languages"):
+                user_skills = u.get("skills") or []
+                tech_kw = {"python", "sql", "javascript", "typescript", "java", "c++", "c#", "golang", "go", "react", "node", "nodejs", "vue", "angular", "django", "flask", "fastapi"}
+                langs = [s for s in user_skills if str(s).lower() in tech_kw]
+                u["email_languages"] = langs if langs else (user_skills[:4] if user_skills else ["Python", "SQL"])
+            if not u.get("email_experience_filter"):
+                u["email_experience_filter"] = "1_year"
+            return u
+        return None
+    finally:
+        conn.close()
 
 def verify_user_credentials(email: str, password: str, db_path: Path = DB_PATH) -> Optional[Dict]:
     """Verifies user login credentials."""
@@ -765,14 +859,12 @@ def verify_user_credentials(email: str, password: str, db_path: Path = DB_PATH) 
     if not user:
         return None
     stored_pw = user.get("password") or "password123"
-    # Match direct password or SHA-256 hash
     if stored_pw == password or hashlib.sha256(password.encode()).hexdigest() == stored_pw:
         return user
     return None
 
+@with_db_retry()
 def upsert_user(user_data: dict, db_path: Path = DB_PATH) -> Dict:
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     email = user_data.get("email", "").strip().lower()
     name = user_data.get("name", "").strip() or email.split("@")[0]
     password = user_data.get("password", "password123")
@@ -804,39 +896,41 @@ def upsert_user(user_data: dict, db_path: Path = DB_PATH) -> Dict:
         matched_l = [s for s in raw_skills if str(s).lower() in tech_kw]
         email_languages_str = json.dumps(matched_l if matched_l else (raw_skills[:4] if raw_skills else ["Python", "SQL"]))
 
-    cursor.execute("""
-        INSERT INTO users (
-            email, name, password, target_role, experience_level, skills, 
-            resume_text, resume_filename, daily_email, email_time,
-            email_experience_filter, email_roles, email_languages
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(email) DO UPDATE SET
-            name = excluded.name,
-            password = CASE WHEN excluded.password != '' AND excluded.password != 'password123' THEN excluded.password ELSE users.password END,
-            target_role = excluded.target_role,
-            experience_level = excluded.experience_level,
-            skills = excluded.skills,
-            resume_text = CASE WHEN excluded.resume_text != '' THEN excluded.resume_text ELSE users.resume_text END,
-            resume_filename = CASE WHEN excluded.resume_filename != '' THEN excluded.resume_filename ELSE users.resume_filename END,
-            daily_email = excluded.daily_email,
-            email_time = CASE WHEN excluded.email_time != '' THEN excluded.email_time ELSE users.email_time END,
-            email_experience_filter = CASE WHEN excluded.email_experience_filter != '' THEN excluded.email_experience_filter ELSE users.email_experience_filter END,
-            email_roles = CASE WHEN excluded.email_roles != '[]' THEN excluded.email_roles ELSE users.email_roles END,
-            email_languages = CASE WHEN excluded.email_languages != '[]' THEN excluded.email_languages ELSE users.email_languages END
-    """, (email, name, password, target_role, experience_level, skills, resume_text, resume_filename, daily_email, email_time, email_experience_filter, email_roles_str, email_languages_str))
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO users (
+                email, name, password, target_role, experience_level, skills, 
+                resume_text, resume_filename, daily_email, email_time,
+                email_experience_filter, email_roles, email_languages
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET
+                name = excluded.name,
+                password = CASE WHEN excluded.password != '' AND excluded.password != 'password123' THEN excluded.password ELSE users.password END,
+                target_role = excluded.target_role,
+                experience_level = excluded.experience_level,
+                skills = excluded.skills,
+                resume_text = CASE WHEN excluded.resume_text != '' THEN excluded.resume_text ELSE users.resume_text END,
+                resume_filename = CASE WHEN excluded.resume_filename != '' THEN excluded.resume_filename ELSE users.resume_filename END,
+                daily_email = excluded.daily_email,
+                email_time = CASE WHEN excluded.email_time != '' THEN excluded.email_time ELSE users.email_time END,
+                email_experience_filter = CASE WHEN excluded.email_experience_filter != '' THEN excluded.email_experience_filter ELSE users.email_experience_filter END,
+                email_roles = CASE WHEN excluded.email_roles != '[]' THEN excluded.email_roles ELSE users.email_roles END,
+                email_languages = CASE WHEN excluded.email_languages != '[]' THEN excluded.email_languages ELSE users.email_languages END
+        """, (email, name, password, target_role, experience_level, skills, resume_text, resume_filename, daily_email, email_time, email_experience_filter, email_roles_str, email_languages_str))
+        conn.commit()
+    finally:
+        conn.close()
 
-    conn.commit()
-    conn.close()
     return get_user_by_email(email, db_path)
 
+@with_db_retry()
 def update_user_profile(user_data: dict, db_path: Path = DB_PATH) -> Optional[Dict]:
     """Updates user profile details directly."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     email = user_data.get("email", "").strip().lower()
     if not email:
-        conn.close()
         return None
 
     name = user_data.get("name")
@@ -953,25 +1047,31 @@ def update_user_profile(user_data: dict, db_path: Path = DB_PATH) -> Optional[Di
         params.append((user_data.get("summary_bio") or "").strip())
 
     if updates:
-        sql = f"UPDATE users SET {', '.join(updates)} WHERE LOWER(email) = ?"
-        params.append(email)
-        cursor.execute(sql, params)
-        conn.commit()
+        conn = get_connection(db_path)
+        try:
+            cursor = conn.cursor()
+            sql = f"UPDATE users SET {', '.join(updates)} WHERE LOWER(email) = ?"
+            params.append(email)
+            cursor.execute(sql, params)
+            conn.commit()
+        finally:
+            conn.close()
 
-    conn.close()
     return get_user_by_email(email, db_path)
 
+@with_db_retry()
 def get_system_setting(key: str, default: str = "", db_path: Path = DB_PATH) -> str:
     """Retrieves a persisted system setting from the database."""
+    conn = get_connection(db_path)
     try:
-        conn = get_connection(db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM system_settings WHERE key = ?", (key,))
         row = cursor.fetchone()
-        conn.close()
         return row[0] if row and row[0] is not None else default
     except Exception:
         return default
+    finally:
+        conn.close()
 
 def normalize_time_str(time_str: str) -> str:
     """Normalizes any time string (12h with AM/PM or 24h) to a strict HH:MM 24-hour string."""
@@ -999,18 +1099,19 @@ def normalize_time_str(time_str: str) -> str:
             pass
     return "20:00"
 
+@with_db_retry()
 def set_system_setting(key: str, value: str, db_path: Path = DB_PATH) -> None:
     """Stores a persisted system setting in the database and syncs to email_credentials.json."""
+    conn = get_connection(db_path)
     try:
-        conn = get_connection(db_path)
         cursor = conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (key, str(value)))
         conn.commit()
-        conn.close()
     except Exception as e:
         logger.error(f"Error saving system setting {key}: {e}")
+    finally:
+        conn.close()
 
-    # Also persist to email_credentials.json backup
     try:
         cred_file = BASE_DIR / "email_credentials.json"
         creds = {}
@@ -1026,39 +1127,43 @@ def set_system_setting(key: str, value: str, db_path: Path = DB_PATH) -> None:
     except Exception as e:
         logger.warning(f"Could not backup to email_credentials.json: {e}")
 
+@with_db_retry()
 def update_user_schedule(email: str, email_time: str, daily_email: bool = True, db_path: Path = DB_PATH) -> Optional[Dict]:
     """Updates user preferred daily digest time and toggle status, auto-upserting if new."""
-    conn = get_connection(db_path)
-    cursor = conn.cursor()
     clean_email = (email or "").strip().lower()
     if not clean_email:
-        conn.close()
         return None
 
     clean_time = normalize_time_str(email_time)
 
-    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
-    existing = cursor.fetchone()
-    if not existing:
-        name = clean_email.split("@")[0].capitalize()
-        cursor.execute("""
-            INSERT INTO users (email, name, email_time, daily_email, target_role, experience_level)
-            VALUES (?, ?, ?, ?, 'Software Engineer', 'fresher')
-        """, (clean_email, name, clean_time, 1 if daily_email else 0))
-    else:
-        cursor.execute("""
-            UPDATE users 
-            SET email_time = ?, daily_email = ?
-            WHERE LOWER(email) = ?
-        """, (clean_time, 1 if daily_email else 0, clean_email))
-    conn.commit()
-    conn.close()
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,))
+        existing = cursor.fetchone()
+        if not existing:
+            name = clean_email.split("@")[0].capitalize()
+            cursor.execute("""
+                INSERT INTO users (email, name, email_time, daily_email, target_role, experience_level)
+                VALUES (?, ?, ?, ?, 'Software Engineer', 'fresher')
+            """, (clean_email, name, clean_time, 1 if daily_email else 0))
+        else:
+            cursor.execute("""
+                UPDATE users 
+                SET email_time = ?, daily_email = ?
+                WHERE LOWER(email) = ?
+            """, (clean_time, 1 if daily_email else 0, clean_email))
+        conn.commit()
+    finally:
+        conn.close()
+
     return get_user_by_email(clean_email, db_path)
 
+@with_db_retry()
 def mark_user_digest_sent(email: str, date_str: str, time_str: str = "", db_path: Path = DB_PATH) -> None:
     """Records that today's digest was sent to this user, preventing duplicate delivery on subsequent ticks."""
+    conn = get_connection(db_path)
     try:
-        conn = get_connection(db_path)
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE users 
@@ -1066,20 +1171,20 @@ def mark_user_digest_sent(email: str, date_str: str, time_str: str = "", db_path
             WHERE LOWER(email) = ?
         """, (date_str, time_str, (email or "").strip().lower()))
         conn.commit()
-        conn.close()
     except Exception as e:
         logger.error(f"Error marking digest sent for {email}: {e}")
+    finally:
+        conn.close()
 
+@with_db_retry()
 def reset_user_digest_tracking(email: str, db_path: Path = DB_PATH) -> None:
     """Clears last digest date so user can immediately receive a digest when changing schedule time to test."""
+    conn = get_connection(db_path)
     try:
-        conn = get_connection(db_path)
         cursor = conn.cursor()
         cursor.execute("UPDATE users SET last_digest_date = '' WHERE LOWER(email) = ?", ((email or "").strip().lower(),))
         conn.commit()
-        conn.close()
     except Exception as e:
         logger.error(f"Error resetting digest tracking for {email}: {e}")
-
-# Initialize on import
-init_db()
+    finally:
+        conn.close()

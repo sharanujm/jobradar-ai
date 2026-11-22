@@ -87,6 +87,21 @@ def scrape_all_sources(config: dict) -> int:
         except Exception as e:
             logger.error(f"Error scraping Internshala: {e}")
 
+    # 3. Scrape Expanded Sources: Instahyre, RemoteOK, Remotive, WeWorkRemotely, Arbeitnow
+    try:
+        logger.info("🌐 Scraping expanded tech platforms (Instahyre, RemoteOK, Remotive, WeWorkRemotely, Arbeitnow)...")
+        from .multi_platform_scraper import scrape_all_additional_sources
+        additional_jobs = scrape_all_additional_sources(roles=roles)
+        for j in additional_jobs:
+            if not is_matching_job(j, config):
+                continue
+            is_new = save_job(j)
+            if is_new:
+                total_new_jobs += 1
+                logger.info(f"  ✨ [NEW {j['site'].upper()}] {j['title']} @ {j['company']}")
+    except Exception as e:
+        logger.error(f"Error scraping expanded platforms: {e}")
+
     stats = get_stats()
     logger.info(f"Scraping completed! Added {total_new_jobs} new jobs. Total in DB: {stats['total']}, Pending for email: {stats['pending']}")
     return total_new_jobs

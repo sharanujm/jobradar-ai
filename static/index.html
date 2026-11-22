@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JobRadar AI &bull; Intelligent Job Search, Resume Studio & Application Agent</title>
-    <link rel="stylesheet" href="/static/styles.css?v=4.0">
+    <link rel="stylesheet" href="/static/styles.css?v=4.5">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234F46E5'><path d='M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.5l-6.3 4.5 2.3-7.2-6-4.4h7.6z'/></svg>">
 </head>
 <body>
@@ -473,10 +473,15 @@
 
                         <span class="filter-group-label" style="margin-left: 12px;">Platform:</span>
                         <span class="pill active" data-filter="site" data-value="all" onclick="setFilter(this)">All Sources</span>
+                        <span class="pill" data-filter="site" data-value="instahyre" onclick="setFilter(this)">⚡ Instahyre</span>
                         <span class="pill" data-filter="site" data-value="internshala" onclick="setFilter(this)">🎓 Internshala</span>
                         <span class="pill" data-filter="site" data-value="naukri" onclick="setFilter(this)">💼 Naukri</span>
                         <span class="pill" data-filter="site" data-value="linkedin" onclick="setFilter(this)">LinkedIn</span>
                         <span class="pill" data-filter="site" data-value="indeed" onclick="setFilter(this)">Indeed</span>
+                        <span class="pill" data-filter="site" data-value="remoteok" onclick="setFilter(this)">🌐 RemoteOK</span>
+                        <span class="pill" data-filter="site" data-value="remotive" onclick="setFilter(this)">💻 Remotive</span>
+                        <span class="pill" data-filter="site" data-value="weworkremotely" onclick="setFilter(this)">🏢 WeWorkRemotely</span>
+                        <span class="pill" data-filter="site" data-value="arbeitnow" onclick="setFilter(this)">🚀 Arbeitnow</span>
                         <span class="pill" data-filter="site" data-value="glassdoor" onclick="setFilter(this)">Glassdoor</span>
                         <span class="pill" data-filter="site" data-value="google" onclick="setFilter(this)">Google Career Pages</span>
 
@@ -2371,9 +2376,12 @@
 
         <!-- Panel 2: LinkedIn Connection DM -->
         <div id="panel-linkedin" class="pitch-tab-panel" style="display:none; width:100%;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
                 <span style="font-size:12px; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">LinkedIn Connection Request Note (&lt;300 Chars)</span>
-                <button class="btn btn-secondary btn-sm" onclick="copyPitchContent('linkedin-msg-text')">📋 Copy to Clipboard</button>
+                <div style="display:flex; gap:6px;">
+                    <button class="btn btn-sm" style="background:#0a66c2; color:#fff; font-weight:700; border:none;" onclick="openLinkedInRecruiterSearchFromPitch()">👔 Find Recruiters on LinkedIn &rarr;</button>
+                    <button class="btn btn-secondary btn-sm" onclick="copyPitchContent('linkedin-msg-text')">📋 Copy Note</button>
+                </div>
             </div>
             <textarea id="linkedin-msg-text" class="form-control" rows="6" style="width:100% !important; box-sizing:border-box !important; font-size:14px; line-height:1.6; min-height:140px; padding:16px; resize:vertical;" readonly></textarea>
             <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">
@@ -2384,9 +2392,12 @@
         <!-- Panel 3: Cold Email Pitch -->
         <div id="panel-coldemail" class="pitch-tab-panel" style="display:none; width:100%;">
             <div style="margin-bottom:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
                     <label class="form-label" style="margin:0;">Subject Line</label>
-                    <button class="btn btn-secondary btn-sm" onclick="copyPitchContent('cold-email-subject')">📋 Copy Subject</button>
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn btn-sm" style="background:#0a66c2; color:#fff; font-weight:700; border:none;" onclick="openLinkedInRecruiterSearchFromPitch()">👔 Find Recruiters &rarr;</button>
+                        <button class="btn btn-secondary btn-sm" onclick="copyPitchContent('cold-email-subject')">📋 Copy Subject</button>
+                    </div>
                 </div>
                 <input type="text" id="cold-email-subject" class="form-control" style="width:100% !important; box-sizing:border-box !important; font-weight:600; font-size:14px; padding:12px 14px;" readonly>
             </div>
@@ -2427,8 +2438,82 @@
             </div>
         </div>
 
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px; padding-top:14px; border-top:1px solid var(--border-default);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:14px; border-top:1px solid var(--border-default);">
+            <button class="btn btn-sm" style="background:#0a66c2; color:#fff; font-weight:700; border:none;" onclick="openLinkedInRecruiterSearchFromPitch()">👔 Find Recruiters on LinkedIn &rarr;</button>
             <button class="btn btn-secondary" onclick="closePitchModal()">Done</button>
+        </div>
+    </div>
+</div>
+
+<!-- ATS KEYWORD BOOSTER MODAL -->
+<div class="modal-overlay" id="ats-booster-modal">
+    <div class="modal-card" style="max-width:740px;">
+        <div class="modal-header">
+            <div class="modal-title">
+                <span>🎯</span> ATS Keyword Booster &bull; <span id="ats-modal-role" style="color:var(--primary); font-weight:700;">Role</span>
+            </div>
+            <button class="modal-close-btn" onclick="closeATSBoosterModal()">&times;</button>
+        </div>
+
+        <div style="font-size:13px; color:var(--text-secondary); margin-bottom:16px;">
+            Targeting <strong id="ats-modal-company" style="color:var(--text-primary);">Company</strong> &bull; Live ATS match breakdown against your active resume.
+        </div>
+
+        <!-- Match Score & Fit Banner -->
+        <div style="display:flex; align-items:center; gap:16px; background:var(--bg-surface); padding:16px; border-radius:12px; border:1px solid var(--border-default); margin-bottom:18px;">
+            <div id="ats-modal-gauge" style="min-width:68px; height:68px; border-radius:50%; background:linear-gradient(135deg, #10b981, #059669); color:#fff; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:800; box-shadow:0 4px 10px rgba(16,185,129,0.35);">
+                85%
+            </div>
+            <div style="flex:1;">
+                <h4 style="margin:0 0 4px; font-size:16px; font-weight:700;" id="ats-modal-fit-title">Strong Candidate Fit</h4>
+                <p style="margin:0; font-size:12px; color:var(--text-secondary);" id="ats-modal-fit-desc">
+                    Your skills cover core technical requirements. Inject the high-yield keywords below into your resume to guarantee beating ATS filters.
+                </p>
+            </div>
+        </div>
+
+        <!-- Matched Skills -->
+        <div style="margin-bottom:16px;">
+            <div style="font-size:12px; font-weight:700; color:#059669; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                <span>✓</span> Matched Keywords Found in Profile:
+            </div>
+            <div id="ats-modal-matched-chips" style="display:flex; flex-wrap:wrap; gap:8px;">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+
+        <!-- Missing ATS Skills -->
+        <div style="margin-bottom:20px;">
+            <div style="font-size:12px; font-weight:700; color:#d97706; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                <span>⚡</span> Missing High-Impact ATS Keywords:
+            </div>
+            <div id="ats-modal-missing-chips" style="display:flex; flex-wrap:wrap; gap:8px;">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+
+        <!-- 1-Click Tailored Bullet Generator (Google XYZ Formula) -->
+        <div style="background:var(--bg-card); border:1px solid var(--border-default); border-radius:12px; padding:16px; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                <div>
+                    <span style="font-size:13px; font-weight:700; color:var(--primary);">✨ AI Resume Bullet Injector (Google XYZ Formula)</span>
+                    <div style="font-size:11px; color:var(--text-muted);">Crafts high-impact bullet points incorporating missing keywords to paste into your resume</div>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-generate-ats-bullet" onclick="generateTailoredATSBullet()">
+                    <span>✨ Generate Bullet</span>
+                </button>
+            </div>
+            <div id="ats-bullet-output-box" style="display:none; margin-top:10px;">
+                <textarea id="ats-bullet-text" class="form-control" rows="3" style="width:100%; font-size:13px; line-height:1.6; resize:vertical; padding:12px; font-family:var(--font-sans);" readonly></textarea>
+                <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="copyPitchContent('ats-bullet-text')">📋 Copy Bullet Point</button>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; padding-top:12px; border-top:1px solid var(--border-default);">
+            <button class="btn btn-sm" style="background:#0a66c2; color:#fff; font-weight:700; border:none;" onclick="openLinkedInRecruiterSearchFromATS()">👔 Find Recruiters on LinkedIn &rarr;</button>
+            <button class="btn btn-secondary btn-sm" onclick="closeATSBoosterModal()">Close</button>
         </div>
     </div>
 </div>
@@ -2727,119 +2812,154 @@
     </div>
 </div>
 
-<!-- IN-APP STUDY RESOURCE READER & STUDY STUDIO MODAL -->
+<!-- IN-APP STUDY RESOURCE READER & DUAL-PANE STUDY STUDIO MODAL -->
 <div class="modal-overlay" id="resource-reader-modal">
-    <div class="modal-card" style="max-width:980px; width:95%; max-height:92vh; display:flex; flex-direction:column; transition:all 0.2s ease;">
+    <div class="modal-card" style="width:98vw; max-width:1560px; height:95vh; max-height:95vh; display:flex; flex-direction:column; padding:14px 18px;">
         <!-- Modal Top Header -->
-        <div class="modal-header" style="margin-bottom:8px; padding-bottom:10px; display:flex; justify-content:space-between; align-items:flex-start;">
-            <div style="flex:1; padding-right:16px;">
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+        <div class="modal-header" style="margin-bottom:10px; padding-bottom:8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div style="flex:1; min-width:280px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
                     <span id="reader-category-badge" class="badge" style="background:#e0e7ff; color:#3730a3; font-weight:700;">Category</span>
                     <span id="reader-type-badge" class="badge badge-web">Guide</span>
-                    <span id="reader-reading-time" class="badge" style="background:var(--bg-main); color:var(--text-secondary); border:1px solid var(--border-subtle);">⏱️ 5 min read</span>
+                    <span id="reader-reading-time" class="badge" style="background:var(--bg-main); color:var(--text-secondary); border:1px solid var(--border-subtle);">⏱️ 5 min study</span>
                     <span id="reader-status-pill" class="badge" style="background:rgba(16, 185, 129, 0.12); color:#10b981; font-weight:700; display:none;">✓ Studied</span>
                 </div>
-                <h2 style="font-family:var(--font-heading); font-size:20px; font-weight:800; color:var(--text-primary); margin:0; line-height:1.3;" id="reader-title">Resource Title</h2>
-                <div style="font-size:12.5px; color:var(--text-secondary); margin-top:4px;" id="reader-meta-desc">Description</div>
+                <h2 style="font-family:var(--font-heading); font-size:19px; font-weight:800; color:var(--text-primary); margin:0; line-height:1.2;" id="reader-title">Resource Title</h2>
             </div>
+            
+            <!-- Window Controls -->
             <div style="display:flex; align-items:center; gap:8px;">
-                <button class="btn btn-secondary btn-sm" id="btn-reader-fullscreen" onclick="toggleReaderFullscreen()" title="Toggle Fullscreen" style="padding:6px 10px; font-size:14px;">⛶</button>
-                <button class="modal-close-btn" onclick="closeResourceReader()" title="Close Reader">&times;</button>
+                <button class="btn btn-secondary btn-sm" id="btn-toggle-viewmode" onclick="toggleReaderViewMode()" title="Toggle Document Expand / Split Studio View" style="font-size:12px; font-weight:700;">
+                    <span id="viewmode-icon">🗖</span> <span id="viewmode-text">Full Document</span>
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-reader-fullscreen" onclick="toggleReaderFullscreen()" title="Toggle Fullscreen" style="padding:6px 10px; font-size:13px;">⛶</button>
+                <button class="modal-close-btn" onclick="closeResourceReader()" title="Close Reader" style="font-size:22px; cursor:pointer;">&times;</button>
             </div>
         </div>
 
-        <!-- Navigation Tabs & Action Bar -->
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--bg-main); border-radius:var(--radius-md); margin-bottom:12px; border:1px solid var(--border-default); flex-wrap:wrap; gap:8px;">
-            <!-- Tabs -->
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <button class="reader-tab-btn active" id="tab-btn-doc" onclick="switchReaderTab('doc')">
-                    <span>📖</span> In-App Reader
-                </button>
-                <button class="reader-tab-btn" id="tab-btn-ai" onclick="switchReaderTab('ai')">
-                    <span>✨</span> AI Takeaways
-                </button>
-                <button class="reader-tab-btn" id="tab-btn-quiz" onclick="switchReaderTab('quiz')">
-                    <span>⚡</span> Knowledge Quiz (3 Qs)
-                </button>
-                <button class="reader-tab-btn" id="tab-btn-notes" onclick="switchReaderTab('notes')">
-                    <span>📝</span> My Scratchpad
-                </button>
-            </div>
+        <!-- Studio Body: Dual-Pane Split Layout -->
+        <div class="reader-studio-layout" id="reader-studio-layout">
+            <!-- Left Pane: Huge Document Viewer (62% - 100%) -->
+            <div class="reader-left-pane" id="reader-left-pane">
+                <!-- PDF Viewer Iframe -->
+                <iframe id="reader-pdf-frame" src="" style="width:100%; height:100%; border:1px solid var(--border-default); border-radius:var(--radius-md); background:#1e293b; display:none;" title="PDF Reader"></iframe>
 
-            <!-- Quick Action Buttons -->
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <button class="btn btn-secondary btn-sm" id="reader-btn-copy" onclick="copyReaderContent()">📋 Copy</button>
-                <a href="#" id="reader-btn-download" target="_blank" class="btn btn-secondary btn-sm" style="display:none;" title="Download offline copy">⬇️ Download</a>
-                <button class="btn btn-emerald btn-sm" id="reader-btn-toggle" onclick="toggleReaderCompletion()">✓ Mark as Studied</button>
-            </div>
-        </div>
-
-        <!-- Tab Pane 1: Document / Guide / PDF Reader -->
-        <div class="reader-pane active" id="reader-pane-doc">
-            <!-- PDF In-App Frame -->
-            <iframe id="reader-pdf-frame" src="" style="width:100%; height:58vh; border:1px solid var(--border-default); border-radius:var(--radius-md); display:none; background:#2d3748;" title="PDF In-App Viewer"></iframe>
-
-            <!-- Markdown / Rich Guide Text Body -->
-            <div id="reader-content-body" style="padding:22px 24px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); font-size:14px; line-height:1.75; color:var(--text-primary); max-height:58vh; overflow-y:auto;">
-                Loading material...
-            </div>
-
-            <!-- Web Link Card Preview -->
-            <div id="reader-link-body" style="padding:32px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); text-align:center; display:none;">
-                <div style="font-size:36px; margin-bottom:12px;">🌐</div>
-                <h3 style="font-family:var(--font-heading); font-size:18px; font-weight:700; margin-bottom:8px; color:var(--text-primary);" id="link-preview-title">Online Study Guide</h3>
-                <p style="font-size:13.5px; color:var(--text-secondary); max-width:540px; margin:0 auto 20px; line-height:1.5;" id="link-preview-desc">External practice roadmap and interactive problem set.</p>
-                <div style="display:flex; justify-content:center; gap:12px;">
-                    <a href="#" id="link-preview-url" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
-                        <span>🚀</span> Open Full Material in New Tab &rarr;
-                    </a>
+                <!-- Markdown / Text Guide Body -->
+                <div id="reader-content-body" style="height:100%; overflow-y:auto; padding:24px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); font-size:14.5px; line-height:1.75; color:var(--text-primary); display:none;">
+                    Loading material...
                 </div>
-            </div>
-        </div>
 
-        <!-- Tab Pane 2: AI Takeaways & Cheat-Sheet -->
-        <div class="reader-pane" id="reader-pane-ai">
-            <div id="reader-ai-content" style="padding:16px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); max-height:58vh; overflow-y:auto;">
-                <div style="text-align:center; padding:30px 10px; color:var(--text-secondary);">
-                    <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
-                    <span>Generating high-yield AI takeaways &amp; interview questions...</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab Pane 3: Interactive Knowledge Quiz -->
-        <div class="reader-pane" id="reader-pane-quiz">
-            <div id="reader-quiz-container" style="padding:16px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); max-height:58vh; overflow-y:auto;">
-                <div style="text-align:center; padding:30px 10px; color:var(--text-secondary);">
-                    <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
-                    <span>Loading interactive practice quiz...</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tab Pane 4: Personal Study Scratchpad / Notes -->
-        <div class="reader-pane" id="reader-pane-notes">
-            <div style="padding:16px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); max-height:58vh; overflow-y:auto;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div>
-                        <h4 style="font-family:var(--font-heading); font-size:15px; font-weight:700; color:var(--text-primary); margin:0;">📝 My Revision Scratchpad</h4>
-                        <div style="font-size:12px; color:var(--text-secondary);">Take private notes, write down tricky edge-cases, or summarize concepts while studying this document.</div>
+                <!-- Web Link Preview Body -->
+                <div id="reader-link-body" style="height:100%; padding:36px 20px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-md); text-align:center; display:none;">
+                    <div style="font-size:42px; margin-bottom:12px;">🌐</div>
+                    <h3 style="font-family:var(--font-heading); font-size:18px; font-weight:700; margin-bottom:8px; color:var(--text-primary);" id="link-preview-title">Online Study Guide</h3>
+                    <p style="font-size:13.5px; color:var(--text-secondary); max-width:540px; margin:0 auto 20px; line-height:1.5;" id="link-preview-desc">External practice roadmap and interactive problem set.</p>
+                    <div style="display:flex; justify-content:center; gap:12px;">
+                        <a href="#" id="link-preview-url" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                            <span>🚀</span> Open Full Material in New Tab &rarr;
+                        </a>
                     </div>
-                    <span id="notes-save-indicator" style="font-size:11.5px; color:#10b981; font-weight:600; display:inline-flex; align-items:center; gap:4px;">
-                        ✓ Saved
-                    </span>
                 </div>
-                <textarea id="reader-user-notes" class="scratchpad-textarea" placeholder="Type your personal notes, formulas, or key interview reminders here... Auto-saved to your profile." oninput="handleScratchpadInput()"></textarea>
             </div>
-        </div>
 
-        <!-- Modal Bottom Footer -->
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:10px; border-top:1px solid var(--border-default); flex-wrap:wrap; gap:8px;">
-            <div style="font-size:12px; color:var(--text-secondary);">
-                💡 Tip: Use the <strong>AI Takeaways</strong> and <strong>Knowledge Quiz</strong> tabs to self-test before marking complete.
-            </div>
-            <div style="display:flex; gap:8px;">
-                <button class="btn btn-secondary btn-sm" onclick="closeResourceReader()">Close Reader</button>
+            <!-- Right Pane: Interactive AI Study Companion (38%) -->
+            <div class="reader-right-pane" id="reader-right-pane">
+                <!-- Companion Top Tab Bar -->
+                <div class="side-tab-bar">
+                    <button class="side-tab-pill active" id="tab-btn-ai" onclick="switchSideTab('ai')">
+                        <span>✨</span> Takeaways
+                    </button>
+                    <button class="side-tab-pill" id="tab-btn-quiz" onclick="switchSideTab('quiz')">
+                        <span>⚡</span> Quiz (3 Qs)
+                    </button>
+                    <button class="side-tab-pill" id="tab-btn-flashcards" onclick="switchSideTab('flashcards')">
+                        <span>🎴</span> Flashcards
+                    </button>
+                    <button class="side-tab-pill" id="tab-btn-ask" onclick="switchSideTab('ask')">
+                        <span>💬</span> Ask AI
+                    </button>
+                    <button class="side-tab-pill" id="tab-btn-notes" onclick="switchSideTab('notes')">
+                        <span>📝</span> Scratchpad
+                    </button>
+                </div>
+
+                <!-- Tab 1: AI Key Takeaways & Cheat-Sheet -->
+                <div class="side-pane-content active" id="side-pane-ai">
+                    <div id="reader-ai-content">
+                        <div style="text-align:center; padding:32px 10px; color:var(--text-secondary);">
+                            <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+                            <span>Analyzing document and extracting AI takeaways...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Interactive Practice Quiz -->
+                <div class="side-pane-content" id="side-pane-quiz">
+                    <div id="reader-quiz-container">
+                        <div style="text-align:center; padding:32px 10px; color:var(--text-secondary);">
+                            <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+                            <span>Generating interactive quiz questions...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Interactive 3D Flip Flashcards -->
+                <div class="side-pane-content" id="side-pane-flashcards">
+                    <div id="reader-flashcards-container">
+                        <div style="text-align:center; padding:32px 10px; color:var(--text-secondary);">
+                            <div class="spinner" style="width:24px; height:24px; border-width:2px; margin:0 auto 12px;"></div>
+                            <span>Generating interactive revision flashcards...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Interactive Document Q&A Chat -->
+                <div class="side-pane-content" id="side-pane-ask">
+                    <div class="doc-chat-box">
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border-subtle);">
+                            <div style="font-weight:700; font-size:13px; color:var(--text-primary);">💬 Ask Anything About This PDF</div>
+                            <div style="font-size:11.5px; color:var(--text-secondary);">Get instant answers and conceptual explanations cited from your document.</div>
+                        </div>
+
+                        <!-- Quick suggestion chips -->
+                        <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:6px; margin-bottom:8px;" id="doc-quick-chips">
+                            <span class="quick-prompt-chip" onclick="askDocumentQuickPrompt('What are the key steps or procedures explained in this document?')">Key Steps?</span>
+                            <span class="quick-prompt-chip" onclick="askDocumentQuickPrompt('What are the main interfaces, methods, or classes mentioned?')">Core Classes?</span>
+                            <span class="quick-prompt-chip" onclick="askDocumentQuickPrompt('What are the top 3 tricky interview questions from this material?')">Top 3 Questions?</span>
+                        </div>
+
+                        <!-- Chat Messages Container -->
+                        <div class="doc-chat-messages" id="doc-chat-messages">
+                            <div class="doc-chat-msg ai">
+                                👋 Ask me anything about this uploaded document! Try asking about definitions, steps, architecture, or interview questions.
+                            </div>
+                        </div>
+
+                        <!-- Input Bar -->
+                        <div style="display:flex; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border-default);">
+                            <input type="text" id="doc-chat-input" class="form-control" placeholder="Ask a question about this document..." style="font-size:12.5px; padding:7px 10px;" onkeydown="if(event.key==='Enter') askDocumentAI()">
+                            <button class="btn btn-primary btn-sm" id="btn-doc-chat-send" onclick="askDocumentAI()" style="padding:7px 12px;">Send</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Personal Study Scratchpad / Notes -->
+                <div class="side-pane-content" id="side-pane-notes">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:12px; font-weight:700; color:var(--text-primary);">📝 My Revision Scratchpad</span>
+                        <span id="notes-save-indicator" style="font-size:11px; color:#10b981; font-weight:600;">✓ Saved</span>
+                    </div>
+                    <textarea id="reader-user-notes" class="scratchpad-textarea" style="min-height:360px;" placeholder="Type your personal revision notes, edge-cases, or formulas while studying... Auto-saved to your profile." oninput="handleScratchpadInput()"></textarea>
+                </div>
+
+                <!-- Bottom Companion Action Bar -->
+                <div style="padding:8px 12px; background:var(--bg-main); border-top:1px solid var(--border-default); display:flex; justify-content:space-between; align-items:center; gap:6px;">
+                    <div style="display:flex; gap:6px;">
+                        <a href="#" id="reader-btn-download" target="_blank" class="btn btn-secondary btn-sm" style="display:none; font-size:11.5px; padding:5px 9px;" title="Download offline copy">⬇️ Download PDF</a>
+                        <button class="btn btn-secondary btn-sm" id="reader-btn-copy" onclick="copyReaderContent()" style="font-size:11.5px; padding:5px 9px;">📋 Copy</button>
+                    </div>
+                    <button class="btn btn-emerald btn-sm" id="reader-btn-toggle" onclick="toggleReaderCompletion()" style="font-size:11.5px; padding:6px 12px;">✓ Mark Studied</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2936,6 +3056,6 @@
 <!-- Toast Notifications Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/app.js?v=4.2"></script>
+<script src="/static/app.js?v=4.5"></script>
 </body>
 </html>

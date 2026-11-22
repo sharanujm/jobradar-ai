@@ -1741,6 +1741,11 @@ textarea.form-control {
 .badge-naukri { background-color: #1f497d; color: #ffffff; }
 .badge-glassdoor { background-color: #0caa41; color: #ffffff; }
 .badge-google { background-color: #ea4335; color: #ffffff; }
+.badge-instahyre { background-color: #4f46e5; color: #ffffff; }
+.badge-remoteok { background-color: #059669; color: #ffffff; }
+.badge-remotive { background-color: #d97706; color: #ffffff; }
+.badge-weworkremotely { background-color: #db2777; color: #ffffff; }
+.badge-arbeitnow { background-color: #0891b2; color: #ffffff; }
 .badge-web { background-color: #64748b; color: #ffffff; }
 
 /* ==============================================================================
@@ -2183,8 +2188,19 @@ textarea.form-control {
 }
 
 /* ==============================================================================
-   IN-APP STUDY VAULT READER & INTERACTIVE STUDY STUDIO
+   IN-APP STUDY VAULT SPLIT STUDIO & COMPANION
    ============================================================================== */
+#resource-reader-modal .modal-card {
+  width: 98vw !important;
+  max-width: 1560px !important;
+  height: 95vh !important;
+  max-height: 95vh !important;
+  border-radius: var(--radius-xl) !important;
+  padding: 16px 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
 .reader-modal-fullscreen .modal-card {
   width: 100vw !important;
   height: 100vh !important;
@@ -2192,54 +2208,210 @@ textarea.form-control {
   max-height: 100vh !important;
   border-radius: 0 !important;
   margin: 0 !important;
+  padding: 14px 18px !important;
   box-shadow: none !important;
 }
 
-.reader-modal-fullscreen #reader-pdf-frame,
-.reader-modal-fullscreen #reader-content-body,
-.reader-modal-fullscreen #reader-pane-ai,
-.reader-modal-fullscreen #reader-pane-quiz,
-.reader-modal-fullscreen #reader-pane-notes {
-  height: calc(100vh - 200px) !important;
-  max-height: calc(100vh - 200px) !important;
+.reader-studio-layout {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  height: calc(95vh - 85px);
+  min-height: 0;
+  overflow: hidden;
 }
 
-.reader-tab-btn {
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 12.5px;
-  font-weight: 600;
+.reader-left-pane {
+  flex: 1.6;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.25s ease;
+}
+
+.reader-left-pane.full-width {
+  flex: 1 0 100% !important;
+}
+
+.reader-right-pane {
+  flex: 1;
+  min-width: 380px;
+  max-width: 540px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
   border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.25s ease;
+}
+
+.reader-right-pane.hidden {
+  display: none !important;
+}
+
+#reader-pdf-frame {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: #1e293b;
+}
+
+.side-tab-bar {
+  display: flex;
   background: var(--bg-main);
+  border-bottom: 1px solid var(--border-default);
+  padding: 6px;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.side-tab-pill {
+  padding: 6px 11px;
+  border-radius: 16px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
+  gap: 4px;
+  transition: all 0.18s ease;
 }
 
-.reader-tab-btn:hover {
+.side-tab-pill:hover {
   background: var(--bg-surface);
   color: var(--text-primary);
-  border-color: var(--primary-500);
 }
 
-.reader-tab-btn.active {
+.side-tab-pill.active {
   background: var(--primary-600);
   color: #ffffff;
   border-color: var(--primary-600);
-  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
+  box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);
 }
 
-.reader-pane {
-  display: none;
+.side-pane-content {
   flex: 1;
   overflow-y: auto;
+  padding: 14px 16px;
+  display: none;
 }
 
-.reader-pane.active {
+.side-pane-content.active {
   display: block;
+}
+
+/* 3D Interactive Flashcards */
+.flashcard-wrapper {
+  perspective: 1000px;
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+
+.flashcard-card {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  text-align: center;
+  transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1);
+  transform-style: preserve-3d;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.flashcard-card.flipped {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid var(--border-default);
+}
+
+.flashcard-front {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(147, 51, 234, 0.08) 100%);
+  color: var(--text-primary);
+}
+
+.flashcard-back {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+  color: var(--text-primary);
+  transform: rotateY(180deg);
+}
+
+/* Document Q&A Chat Styling */
+.doc-chat-box {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.doc-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.doc-chat-msg {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 90%;
+}
+
+.doc-chat-msg.user {
+  align-self: flex-end;
+  background: var(--primary-600);
+  color: #ffffff;
+  border-bottom-right-radius: 2px;
+}
+
+.doc-chat-msg.ai {
+  align-self: flex-start;
+  background: var(--bg-main);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-bottom-left-radius: 2px;
+}
+
+.quick-prompt-chip {
+  padding: 4px 10px;
+  background: var(--bg-main);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.quick-prompt-chip:hover {
+  background: var(--primary-50);
+  color: var(--primary-700);
+  border-color: var(--primary-300);
 }
 
 /* Interactive Quiz Styling */
