@@ -10,6 +10,7 @@ __pycache__/
 
 # Environment variables & secrets
 .env
+email_credentials.json
 
 # Database (uncomment to exclude)
 # jobs.db

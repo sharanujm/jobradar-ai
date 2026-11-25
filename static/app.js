@@ -59,12 +59,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const savedTime = localStorage.getItem("jobradar_scheduled_time");
     const savedEmail = localStorage.getItem("jobradar_user_email");
     if (savedTime) {
-        const inpTime = document.getElementById("input-schedule-time");
-        if (inpTime) inpTime.value = savedTime;
+        set12hTimePickers(savedTime, "all");
         const sideTime = document.getElementById("sidebar-schedule-display");
         if (sideTime) sideTime.textContent = `Daily Digest: ${formatTimeTo12h(savedTime)}`;
-        const profTime = document.getElementById("profile-modal-time");
-        if (profTime) profTime.value = savedTime;
     }
     if (savedEmail) {
         const inpEmail = document.getElementById("auto-email-input");
@@ -609,9 +606,7 @@ function renderUserHeader() {
         const emailTime = u.email_time || localStorage.getItem("jobradar_scheduled_time") || "20:00";
         localStorage.setItem("jobradar_scheduled_time", emailTime);
         if (sidebarScheduleEl) sidebarScheduleEl.textContent = `Daily Digest: ${formatTimeTo12h(emailTime)}`;
-        if (inputScheduleTime) inputScheduleTime.value = emailTime;
-        const profileTimeInput = document.getElementById("profile-modal-time");
-        if (profileTimeInput) profileTimeInput.value = emailTime;
+        set12hTimePickers(emailTime, "all");
 
         if (autoEmailExp) autoEmailExp.value = u.email_experience_filter || "1_year";
         if (autoEmailRoles) {
@@ -676,9 +671,7 @@ function renderUserHeader() {
         if (autoEmailLocations) autoEmailLocations.value = "";
         const preservedTime = localStorage.getItem("jobradar_scheduled_time") || "20:00";
         if (sidebarScheduleEl) sidebarScheduleEl.textContent = `Daily Digest: ${formatTimeTo12h(preservedTime)}`;
-        if (inputScheduleTime) inputScheduleTime.value = preservedTime;
-        const profileTimeInput = document.getElementById("profile-modal-time");
-        if (profileTimeInput) profileTimeInput.value = preservedTime;
+        set12hTimePickers(preservedTime, "all");
         if (sidebarSkillsCount) sidebarSkillsCount.textContent = "0";
         const studioSkillsCount = document.getElementById("studio-skills-count");
         if (studioSkillsCount) studioSkillsCount.textContent = "0 Skills";
@@ -701,13 +694,151 @@ function renderUserHeader() {
 }
 
 function formatTimeTo12h(timeStr) {
-    if (!timeStr) return "8:00 PM";
-    const parts = timeStr.split(":");
+    if (!timeStr) return "08:00 PM";
+    const str = String(timeStr).trim();
+    if (str.toUpperCase().includes("AM") || str.toUpperCase().includes("PM")) {
+        const m = str.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (m) {
+            const hh = String(parseInt(m[1], 10)).padStart(2, "0");
+            return `${hh}:${m[2]} ${m[3].toUpperCase()}`;
+        }
+        return str;
+    }
+    const parts = str.split(":");
     let h = parseInt(parts[0], 10);
-    const m = parts[1] || "00";
+    const min = (parts[1] || "00").substring(0, 2);
+    if (isNaN(h)) return "08:00 PM";
     const ampm = h >= 12 ? "PM" : "AM";
     h = h % 12 || 12;
-    return `${h}:${m} ${ampm}`;
+    const hh = String(h).padStart(2, "0");
+    return `${hh}:${min} ${ampm}`;
+}
+
+function parseTimeTo12h(timeStr) {
+    const formatted = formatTimeTo12h(timeStr);
+    const m = formatted.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (m) {
+        let h24 = parseInt(m[1], 10);
+        const isPM = m[3].toUpperCase() === "PM";
+        if (isPM && h24 < 12) h24 += 12;
+        if (!isPM && h24 === 12) h24 = 0;
+        const time24 = `${String(h24).padStart(2, "0")}:${m[2]}`;
+        const hh = String(parseInt(m[1], 10)).padStart(2, "0");
+        return {
+            hour: hh,
+            minute: m[2],
+            ampm: m[3].toUpperCase(),
+            time12: `${hh}:${m[2]} ${m[3].toUpperCase()}`,
+            time24: time24
+        };
+    }
+    return { hour: "08", minute: "00", ampm: "PM", time12: "08:00 PM", time24: "20:00" };
+}
+
+function convert12hTo24h(hour, minute, ampm) {
+    let h = parseInt(hour, 10);
+    const min = String(minute || "00").padStart(2, "0");
+    const isPM = (ampm || "").toUpperCase() === "PM";
+    if (isPM && h < 12) h += 12;
+    if (!isPM && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${min}`;
+}
+
+function get12hTimeFromPickers(target) {
+    const prefix = (target === "modal") ? "modal" : "auto";
+    const h = document.getElementById(`${prefix}-time-hour`)?.value || "08";
+    const m = document.getElementById(`${prefix}-time-minute`)?.value || "00";
+    const ampm = document.getElementById(`${prefix}-time-ampm`)?.value || "PM";
+    const time24 = convert12hTo24h(h, m, ampm);
+
+    const hiddenInp = document.getElementById(target === "modal" ? "profile-modal-time" : "input-schedule-time");
+    if (hiddenInp) hiddenInp.value = time24;
+
+    return time24;
+}
+
+function set12hTimePickers(timeStr, target = "all") {
+    const parsed = parseTimeTo12h(timeStr);
+
+    if (target === "automation" || target === "all") {
+        const hEl = document.getElementById("auto-time-hour");
+        const mEl = document.getElementById("auto-time-minute");
+        const apEl = document.getElementById("auto-time-ampm");
+        const hiddenEl = document.getElementById("input-schedule-time");
+        const helperEl = document.getElementById("schedule-helper-text");
+
+        if (hEl) hEl.value = parsed.hour;
+        if (mEl) {
+            let found = false;
+            for (let i = 0; i < mEl.options.length; i++) {
+                if (mEl.options[i].value === parsed.minute) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                const opt = document.createElement("option");
+                opt.value = parsed.minute;
+                opt.text = parsed.minute;
+                mEl.add(opt);
+            }
+            mEl.value = parsed.minute;
+        }
+        if (apEl) apEl.value = parsed.ampm;
+        if (hiddenEl) hiddenEl.value = parsed.time24;
+
+        if (helperEl) {
+            const leadParts = parsed.time24.split(":");
+            const total = (parseInt(leadParts[0], 10) * 60 + parseInt(leadParts[1], 10) - 30 + 1440) % 1440;
+            const scrapeStr = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+            helperEl.innerHTML = `📬 Delivering daily at <b>${parsed.time12} IST</b> (Automated pre-scrape runs 30 mins before at <b>${formatTimeTo12h(scrapeStr)} IST</b>).`;
+        }
+    }
+
+    if (target === "modal" || target === "all") {
+        const mhEl = document.getElementById("modal-time-hour");
+        const mmEl = document.getElementById("modal-time-minute");
+        const mapEl = document.getElementById("modal-time-ampm");
+        const mHiddenEl = document.getElementById("profile-modal-time");
+        const mHintEl = document.getElementById("modal-time-display-hint");
+
+        if (mhEl) mhEl.value = parsed.hour;
+        if (mmEl) {
+            let found = false;
+            for (let i = 0; i < mmEl.options.length; i++) {
+                if (mmEl.options[i].value === parsed.minute) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                const opt = document.createElement("option");
+                opt.value = parsed.minute;
+                opt.text = parsed.minute;
+                mmEl.add(opt);
+            }
+            mmEl.value = parsed.minute;
+        }
+        if (mapEl) mapEl.value = parsed.ampm;
+        if (mHiddenEl) mHiddenEl.value = parsed.time24;
+        if (mHintEl) mHintEl.innerHTML = `Digest delivered daily at <b>${parsed.time12} IST</b>`;
+    }
+}
+
+function applyTimePreset(time12h, target = "automation") {
+    set12hTimePickers(time12h, target);
+    syncPipelineTimesPreview();
+    if (target === "automation") {
+        saveCustomScheduleTime();
+    }
+}
+
+function on12hTimeChanged(target) {
+    const time24 = get12hTimeFromPickers(target);
+    set12hTimePickers(time24, target);
+    if (target === "automation") {
+        syncPipelineTimesPreview();
+    }
 }
 
 async function toggleExperienceMode() {
@@ -765,7 +896,7 @@ function openProfileModal() {
         const locsArr = Array.isArray(u.email_locations) ? u.email_locations : (u.email_locations ? [u.email_locations] : []);
         modalEmailLocs.value = locsArr.join(", ");
     }
-    document.getElementById("profile-modal-time").value = u.email_time || "20:00";
+    set12hTimePickers(u.email_time || "20:00", "modal");
     document.getElementById("profile-modal-daily-email").checked = u.daily_email !== 0 && u.daily_email !== false;
 
     // Telegram & Autofill Settings
@@ -871,7 +1002,7 @@ async function saveProfileChanges() {
     const pw = document.getElementById("profile-modal-password").value.trim();
     const role = document.getElementById("profile-modal-role").value.trim();
     const exp = document.getElementById("profile-modal-exp").value;
-    const time = document.getElementById("profile-modal-time").value || "20:00";
+    const time = get12hTimeFromPickers("modal");
     const dailyEmail = document.getElementById("profile-modal-daily-email").checked;
 
     const tgAlerts = document.getElementById("profile-modal-telegram-alerts")?.checked || false;
@@ -1005,21 +1136,23 @@ async function fetchJobs(reset = false) {
         state.jobs = reset ? jobsList : [...state.jobs, ...jobsList];
         state.totalJobs = total;
 
-        document.getElementById("visible-job-count").textContent = `${state.jobs.length} of ${total} Available`;
-        document.getElementById("sidebar-job-count").textContent = total;
-        document.getElementById("stat-total-jobs").textContent = total;
+        const vjc = document.getElementById("visible-job-count");
+        if (vjc) vjc.textContent = `${state.jobs.length} of ${total} Available`;
+        const sjc = document.getElementById("sidebar-job-count");
+        if (sjc) sjc.textContent = total;
+        const stj = document.getElementById("stat-total-jobs");
+        if (stj) stj.textContent = total;
 
         // Count 80%+ Super Matches
         const superCount = state.jobs.filter(j => j.match && j.match.score >= 80).length;
-        document.getElementById("stat-super-matches").textContent = superCount || `${Math.min(total, 42)}+`;
+        const ssm = document.getElementById("stat-super-matches");
+        if (ssm) ssm.textContent = superCount || `${Math.min(total, 42)}+`;
 
         renderJobCards(state.jobs);
 
         const btnLoadMore = document.getElementById("btn-load-more");
-        if (state.jobs.length >= total) {
-            btnLoadMore.style.display = "none";
-        } else {
-            btnLoadMore.style.display = "inline-block";
+        if (btnLoadMore) {
+            btnLoadMore.style.display = (state.jobs.length >= total) ? "none" : "inline-block";
         }
     } catch (e) {
         console.error("Error fetching jobs:", e);
@@ -1986,14 +2119,8 @@ async function loadPipelineStatus() {
                 localStorage.setItem("jobradar_active_user", JSON.stringify(state.currentUser));
             }
 
-            if (nextDigestEl) nextDigestEl.textContent = `${effectiveTime} (${formatTimeTo12h(effectiveTime)})`;
-            if (inputScheduleTime) {
-                inputScheduleTime.value = effectiveTime;
-            }
-            const profileTimeInput = document.getElementById("profile-modal-time");
-            if (profileTimeInput) {
-                profileTimeInput.value = effectiveTime;
-            }
+            if (nextDigestEl) nextDigestEl.textContent = `${formatTimeTo12h(effectiveTime)} IST`;
+            set12hTimePickers(effectiveTime, "all");
 
             // Sync preview scrape time with effectiveTime
             const leadMin = parseInt(leadSelect?.value || "30", 10);
@@ -2003,7 +2130,7 @@ async function loadPipelineStatus() {
                 const h = String(Math.floor(total / 60)).padStart(2, "0");
                 const m = String(total % 60).padStart(2, "0");
                 const scrapeStr = `${h}:${m}`;
-                if (nextScrapeEl) nextScrapeEl.textContent = `${scrapeStr} (${formatTimeTo12h(scrapeStr)})`;
+                if (nextScrapeEl) nextScrapeEl.textContent = `${formatTimeTo12h(scrapeStr)} IST`;
             } catch (e) {}
 
             if (engineStatusEl) {
@@ -2034,7 +2161,7 @@ async function loadPipelineStatus() {
 }
 
 function syncPipelineTimesPreview() {
-    const timeVal = document.getElementById("input-schedule-time")?.value || "20:00";
+    const timeVal = get12hTimeFromPickers("automation");
     const leadMin = parseInt(document.getElementById("pipeline-lead-time")?.value || "30", 10);
     
     // Calculate preview scrape time
@@ -2047,8 +2174,8 @@ function syncPipelineTimesPreview() {
 
         const nextScrapeEl = document.getElementById("pipeline-next-scrape");
         const nextDigestEl = document.getElementById("pipeline-next-digest");
-        if (nextScrapeEl) nextScrapeEl.textContent = `${scrapeStr} (${formatTimeTo12h(scrapeStr)})`;
-        if (nextDigestEl) nextDigestEl.textContent = `${timeVal} (${formatTimeTo12h(timeVal)})`;
+        if (nextScrapeEl) nextScrapeEl.textContent = `${formatTimeTo12h(scrapeStr)} IST`;
+        if (nextDigestEl) nextDigestEl.textContent = `${formatTimeTo12h(timeVal)} IST`;
     } catch (e) {}
 }
 
@@ -2094,7 +2221,7 @@ async function toggleAutoScrapePipeline() {
 }
 
 async function saveCustomScheduleTime() {
-    const timeVal = document.getElementById("input-schedule-time")?.value || "20:00";
+    const timeVal = get12hTimeFromPickers("automation");
     const emailVal = state.currentUser?.email || document.getElementById("auto-email-input")?.value.trim() || localStorage.getItem("jobradar_user_email") || "";
 
     if (!emailVal) {
@@ -2114,9 +2241,8 @@ async function saveCustomScheduleTime() {
     const sideSchedule = document.getElementById("sidebar-schedule-display");
     if (sideSchedule) sideSchedule.textContent = `Daily Digest: ${formatTimeTo12h(timeVal)}`;
     const nextDigestEl = document.getElementById("pipeline-next-digest");
-    if (nextDigestEl) nextDigestEl.textContent = `${timeVal} (${formatTimeTo12h(timeVal)})`;
-    const profileTimeInput = document.getElementById("profile-modal-time");
-    if (profileTimeInput) profileTimeInput.value = timeVal;
+    if (nextDigestEl) nextDigestEl.textContent = `${formatTimeTo12h(timeVal)} IST`;
+    set12hTimePickers(timeVal, "all");
 
     showToast(`Setting daily email alert for ${emailVal} at ${formatTimeTo12h(timeVal)}...`);
 
@@ -5267,6 +5393,14 @@ function clearSimulatorForm() {
         }
     });
     showToast("🧹 Test simulator form cleared.");
+}
+
+function testAutofillSimulator() {
+    const simBox = document.querySelector(".simulator-box");
+    if (simBox) {
+        simBox.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    runSimulatorAutofill();
 }
 
 function copyBookmarkletCode() {

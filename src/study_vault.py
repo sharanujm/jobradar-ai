@@ -445,6 +445,18 @@ def update_resource_notes(resource_id: int, notes: str, user_email: str = "", db
     finally:
         conn.close()
 
+@with_db_retry()
+def update_resource_content_text(resource_id: int, content: str, db_path: Path = DB_PATH) -> bool:
+    """Updates the cached text content of a study resource with retry."""
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE study_resources SET content_text = ? WHERE id = ?", (content, resource_id))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
 def analyze_pdf_content(content_text: str, title: str, category: str) -> Dict[str, Any]:
     """
     Intelligent NLP and content analysis engine:
@@ -686,12 +698,7 @@ def ask_ai_about_document(resource_id: int, question: str, db_path: Path = DB_PA
     if not content and res.get("file_path"):
         content = extract_pdf_text_from_file(res["file_path"])
         if content:
-            conn = get_connection(db_path)
-            try:
-                conn.execute("UPDATE study_resources SET content_text = ? WHERE id = ?", (content, resource_id))
-                conn.commit()
-            finally:
-                conn.close()
+            update_resource_content_text(resource_id, content, db_path)
 
     if not content:
         return {
@@ -746,12 +753,7 @@ def generate_ai_study_assist(resource_id: int, action: str = "takeaways", db_pat
     if not content and res.get("file_path"):
         content = extract_pdf_text_from_file(res["file_path"])
         if content:
-            conn = get_connection(db_path)
-            try:
-                conn.execute("UPDATE study_resources SET content_text = ? WHERE id = ?", (content, resource_id))
-                conn.commit()
-            finally:
-                conn.close()
+            update_resource_content_text(resource_id, content, db_path)
 
     # Analyze document content
     analysis = analyze_pdf_content(content, title, cat)

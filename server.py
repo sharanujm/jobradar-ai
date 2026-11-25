@@ -27,7 +27,8 @@ from src.database import (
     mark_jobs_delivered_for_user, update_user_schedule, get_connection,
     get_tracker_items_for_user, update_tracker_stage, delete_tracker_item,
     verify_user_credentials, update_user_profile, get_system_setting, set_system_setting,
-    normalize_time_str, mark_user_digest_sent, reset_user_digest_tracking
+    normalize_time_str, mark_user_digest_sent, reset_user_digest_tracking,
+    get_job_by_id, get_scheduled_users, format_time_to_12h
 )
 from src.resume_matcher import (
     extract_text_from_pdf, extract_text_from_docx, extract_skills_from_text, calculate_job_match,
@@ -311,13 +312,7 @@ def check_and_send_scheduled_digests() -> List[str]:
         current_time = now_ist.strftime("%H:%M")
         today_date = now_ist.strftime("%Y-%m-%d")
 
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE daily_email = 1")
-            users = cursor.fetchall()
-        finally:
-            conn.close()
+        users = get_scheduled_users()
 
         for row in users:
             u = dict(row)
@@ -374,13 +369,7 @@ async def background_scheduler_worker():
             current_time = now_ist.strftime("%H:%M")
             today_date = now_ist.strftime("%Y-%m-%d")
 
-            conn = get_connection()
-            try:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM users WHERE daily_email = 1")
-                users = cursor.fetchall()
-            finally:
-                conn.close()
+            users = get_scheduled_users()
 
             lead_min = int(SCAN_STATE.get("lead_minutes", 30))
             active_scrape_times = []
@@ -925,14 +914,7 @@ class PitchRequest(BaseModel):
 
 @app.post("/api/ai/generate-pitch")
 async def generate_pitch_endpoint(req: PitchRequest):
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-        row = cursor.fetchone()
-    finally:
-        conn.close()
-
+    row = get_job_by_id(req.job_id)
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -992,13 +974,7 @@ async def send_telegram_job_alert_endpoint(req: TelegramJobAlertRequest):
     if not token or not cid:
         raise HTTPException(status_code=400, detail="Telegram bot token and chat ID not configured.")
 
-    conn = get_connection()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-        job_row = c.fetchone()
-    finally:
-        conn.close()
+    job_row = get_job_by_id(req.job_id)
     if not job_row:
         raise HTTPException(status_code=404, detail="Job not found.")
 
@@ -1132,13 +1108,7 @@ async def generate_custom_autofill_answers(req: AutofillCustomRequest):
 @app.get("/api/autofill/{job_id}")
 async def get_application_autofill(job_id: str, email: str = DEFAULT_EMAIL):
     user = get_user_by_email(email) or {}
-    conn = get_connection()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        row = c.fetchone()
-    finally:
-        conn.close()
+    row = get_job_by_id(job_id)
     if not row:
         raise HTTPException(status_code=404, detail="Job not found.")
     job = dict(row)
@@ -1235,21 +1205,15 @@ async def update_auto_scrape_settings(req: AutoScrapeSettingsRequest):
 @app.get("/api/automation/pipeline-status")
 async def get_pipeline_status(email: Optional[str] = None):
     global SCAN_STATE
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM jobs")
-        total_jobs = cursor.fetchone()[0]
+    stats = get_stats()
+    total_jobs = stats.get("total", 0)
 
-        email_time = get_system_setting("global_email_schedule_time", "20:00") or "20:00"
-        clean_email = (email or "").strip().lower()
-        if clean_email:
-            cursor.execute("SELECT email_time FROM users WHERE LOWER(email) = ? LIMIT 1", (clean_email,))
-            row = cursor.fetchone()
-            if row and row["email_time"]:
-                email_time = row["email_time"]
-    finally:
-        conn.close()
+    email_time = get_system_setting("global_email_schedule_time", "20:00") or "20:00"
+    clean_email = (email or "").strip().lower()
+    if clean_email:
+        u = get_user_by_email(clean_email)
+        if u and u.get("email_time"):
+            email_time = u["email_time"]
 
     lead_min = int(SCAN_STATE.get("lead_minutes", 30))
     next_scrape = get_time_minus_minutes(email_time, lead_min)
@@ -1262,7 +1226,9 @@ async def get_pipeline_status(email: Optional[str] = None):
         "auto_scrape_enabled": SCAN_STATE.get("auto_scrape_enabled", True),
         "lead_minutes": lead_min,
         "next_scheduled_scrape": next_scrape,
+        "next_scheduled_scrape_12h": format_time_to_12h(next_scrape),
         "next_scheduled_digest": email_time,
+        "next_scheduled_digest_12h": format_time_to_12h(email_time),
         "total_jobs_in_db": total_jobs,
         "platforms": ["LinkedIn", "Indeed", "Glassdoor", "Internshala", "Naukri", "Google Jobs"],
         "country": "India"
@@ -1673,13 +1639,7 @@ async def get_referral_hub_endpoint(
     college_name: str = Query(""),
     company_keyword: str = Query("")
 ):
-    conn = get_connection()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        row = c.fetchone()
-    finally:
-        conn.close()
+    row = get_job_by_id(job_id)
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
     job = dict(row)
@@ -1692,13 +1652,7 @@ async def get_referral_hub_endpoint(
 
 @app.post("/api/referral/generate")
 async def generate_referral_endpoint(req: ReferralHubRequest):
-    conn = get_connection()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-        row = c.fetchone()
-    finally:
-        conn.close()
+    row = get_job_by_id(req.job_id)
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
     job = dict(row)
@@ -1764,15 +1718,9 @@ class InterviewEvaluateRequest(BaseModel):
 async def start_interview_endpoint(req: InterviewStartRequest):
     job = {}
     if req.job_id:
-        conn = get_connection()
-        try:
-            c = conn.cursor()
-            c.execute("SELECT * FROM jobs WHERE id = ?", (req.job_id,))
-            row = c.fetchone()
-            if row:
-                job = dict(row)
-        finally:
-            conn.close()
+        row = get_job_by_id(req.job_id)
+        if row:
+            job = dict(row)
     
     if not job:
         job = {

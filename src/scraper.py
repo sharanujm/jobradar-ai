@@ -4,7 +4,7 @@ from typing import List, Dict
 import pandas as pd
 from jobspy import scrape_jobs
 
-from .database import save_job, get_stats
+from .database import save_job, save_jobs_batch, get_stats
 from .filter import clean_and_normalize_job, is_matching_job
 from .internshala_scraper import scrape_internshala
 
@@ -57,15 +57,16 @@ def scrape_all_sources(config: dict) -> int:
                     records = df.to_dict(orient="records")
                     logger.info(f"  Raw jobs fetched from JobSpy: {len(records)}")
 
+                    batch = []
                     for raw_job in records:
                         normalized = clean_and_normalize_job(raw_job)
-                        if not is_matching_job(normalized, config):
-                            continue
+                        if is_matching_job(normalized, config):
+                            batch.append(normalized)
 
-                        is_new = save_job(normalized)
-                        if is_new:
-                            total_new_jobs += 1
-                            logger.info(f"  ✨ [NEW] {normalized['title']} @ {normalized['company']} ({normalized['site']})")
+                    if batch:
+                        added = save_jobs_batch(batch)
+                        total_new_jobs += added
+                        logger.info(f"  ✨ Saved {added} new positions from JobSpy ({len(batch)} matched).")
 
             except Exception as e:
                 logger.error(f"  Error searching '{role}' in '{loc}': {e}", exc_info=False)
@@ -77,13 +78,11 @@ def scrape_all_sources(config: dict) -> int:
         try:
             logger.info("🎓 Scraping fresh opportunities from Internshala...")
             internshala_jobs = scrape_internshala(limit_per_category=results_wanted)
-            for j in internshala_jobs:
-                if not is_matching_job(j, config):
-                    continue
-                is_new = save_job(j)
-                if is_new:
-                    total_new_jobs += 1
-                    logger.info(f"  ✨ [NEW INTERNSHALA] {j['title']} @ {j['company']}")
+            in_batch = [j for j in internshala_jobs if is_matching_job(j, config)]
+            if in_batch:
+                added = save_jobs_batch(in_batch)
+                total_new_jobs += added
+                logger.info(f"  ✨ Saved {added} new positions from Internshala.")
         except Exception as e:
             logger.error(f"Error scraping Internshala: {e}")
 
@@ -92,13 +91,11 @@ def scrape_all_sources(config: dict) -> int:
         logger.info("🌐 Scraping expanded tech platforms (Instahyre, RemoteOK, Remotive, WeWorkRemotely, Arbeitnow)...")
         from .multi_platform_scraper import scrape_all_additional_sources
         additional_jobs = scrape_all_additional_sources(roles=roles)
-        for j in additional_jobs:
-            if not is_matching_job(j, config):
-                continue
-            is_new = save_job(j)
-            if is_new:
-                total_new_jobs += 1
-                logger.info(f"  ✨ [NEW {j['site'].upper()}] {j['title']} @ {j['company']}")
+        add_batch = [j for j in additional_jobs if is_matching_job(j, config)]
+        if add_batch:
+            added = save_jobs_batch(add_batch)
+            total_new_jobs += added
+            logger.info(f"  ✨ Saved {added} new positions from Expanded Platforms.")
     except Exception as e:
         logger.error(f"Error scraping expanded platforms: {e}")
 

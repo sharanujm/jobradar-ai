@@ -14,14 +14,20 @@ logger = logging.getLogger("Database")
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "jobs.db"
 
-def get_connection(db_path: Path = DB_PATH, timeout: float = 30.0) -> sqlite3.Connection:
-    """Returns a new SQLite connection with busy timeout configured."""
+def get_connection(db_path: Path = DB_PATH, timeout: float = 60.0) -> sqlite3.Connection:
+    """Returns a new SQLite connection with WAL mode, normal synchronous, and busy timeout configured."""
     conn = sqlite3.connect(str(db_path), timeout=timeout, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)};")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)};")
+        conn.execute("PRAGMA cache_size = -64000;")
+    except Exception:
+        pass
     return conn
 
-def with_db_retry(max_retries: int = 5, base_delay: float = 0.15):
+def with_db_retry(max_retries: int = 8, base_delay: float = 0.2):
     """
     Decorator that catches sqlite3.OperationalError: database is locked / busy
     and transparently retries with exponential backoff and jitter.
@@ -40,7 +46,7 @@ def with_db_retry(max_retries: int = 5, base_delay: float = 0.15):
                         if attempt == max_retries - 1:
                             logger.error(f"[DB LOCKED] {func.__name__} exhausted {max_retries} retries: {e}")
                             raise
-                        sleep_time = (base_delay * (2 ** attempt)) + random.uniform(0.02, 0.08)
+                        sleep_time = (base_delay * (1.6 ** attempt)) + random.uniform(0.04, 0.12)
                         logger.warning(f"[DB BUSY] {func.__name__} locked, retrying in {sleep_time:.2f}s (attempt {attempt+1}/{max_retries})...")
                         time.sleep(sleep_time)
                     else:
@@ -245,11 +251,18 @@ def init_db(db_path: Path = DB_PATH) -> None:
     finally:
         conn.close()
 
+@with_db_retry()
 def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> int:
     """Calculates and stores min_exp, max_exp, and exp_category for existing jobs."""
     conn = get_connection(db_path)
     try:
         cursor = conn.cursor()
+        if not force:
+            cursor.execute("SELECT COUNT(*) FROM jobs WHERE min_exp IS NULL OR exp_category IS NULL")
+            missing = cursor.fetchone()[0]
+            if missing == 0:
+                return 0
+
         if force:
             cursor.execute("SELECT id, title, snippet, job_url FROM jobs")
         else:
@@ -269,7 +282,7 @@ def backfill_jobs_experience(db_path: Path = DB_PATH, force: bool = False) -> in
                 conn.commit()
                 updated += len(batch)
                 batch = []
-                time.sleep(0.01)
+                time.sleep(0.03)
         if batch:
             cursor.executemany("UPDATE jobs SET min_exp = ?, max_exp = ?, exp_category = ? WHERE id = ?", batch)
             conn.commit()
@@ -284,6 +297,85 @@ def generate_job_id(site: str, title: str, company: str, job_url: str) -> str:
     clean_url = (job_url or "").split("?")[0].strip().lower()
     raw = f"{site.lower()}|{title.lower().strip()}|{company.lower().strip()}|{clean_url}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+@with_db_retry()
+def get_job_by_id(job_id: str, db_path: Path = DB_PATH) -> Optional[Dict]:
+    """Retrieve a single job by its unique ID."""
+    if not job_id:
+        return None
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM jobs WHERE id = ?", (str(job_id),))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+@with_db_retry()
+def get_scheduled_users(db_path: Path = DB_PATH) -> List[Dict]:
+    """Retrieve all users who have daily digest emails enabled."""
+    conn = get_connection(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE daily_email = 1")
+        rows = cursor.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@with_db_retry()
+def save_jobs_batch(jobs: List[dict], db_path: Path = DB_PATH) -> int:
+    """Saves a batch of jobs in a single transaction, deduplicating existing entries."""
+    if not jobs:
+        return 0
+    from .filter import parse_job_experience
+    conn = get_connection(db_path)
+    inserted = 0
+    try:
+        cursor = conn.cursor()
+        for job in jobs:
+            job_id = job.get("id") or generate_job_id(
+                job.get("site", "unknown"),
+                job.get("title", ""),
+                job.get("company", ""),
+                job.get("job_url", "")
+            )
+            min_exp = job.get("min_exp")
+            max_exp = job.get("max_exp")
+            exp_category = job.get("exp_category")
+            if exp_category is None:
+                min_exp, max_exp, exp_category = parse_job_experience(job.get("title", ""), job.get("snippet", ""), job.get("job_url", ""))
+            try:
+                cursor.execute("""
+                    INSERT INTO jobs (
+                        id, site, title, company, location, job_url, 
+                        date_posted, job_type, salary, is_remote, snippet, emailed_at,
+                        min_exp, max_exp, exp_category
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                """, (
+                    job_id,
+                    job.get("site", "web"),
+                    job.get("title", "Untitled Role"),
+                    job.get("company", "Company"),
+                    job.get("location", "Location Not Specified"),
+                    job.get("job_url", "#"),
+                    str(job.get("date_posted", "")),
+                    str(job.get("job_type", "")),
+                    str(job.get("salary", "")),
+                    1 if job.get("is_remote") else 0,
+                    job.get("snippet", "")[:600] if job.get("snippet") else "",
+                    min_exp,
+                    max_exp,
+                    exp_category
+                ))
+                inserted += 1
+            except sqlite3.IntegrityError:
+                continue
+        conn.commit()
+        return inserted
+    finally:
+        conn.close()
 
 @with_db_retry()
 def save_job(job: dict, db_path: Path = DB_PATH) -> bool:
@@ -514,6 +606,15 @@ def get_jobs_list(
     Retrieve jobs with full-text search, strict experience boundaries,
     location filtering (Bangalore, Hyderabad, Pune, Remote, etc.), and status tracking.
     """
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (ValueError, TypeError):
+        limit = 60
+    try:
+        offset = max(0, int(offset))
+    except (ValueError, TypeError):
+        offset = 0
+
     conditions = ["1=1"]
     params = []
 
@@ -1098,6 +1199,20 @@ def normalize_time_str(time_str: str) -> str:
         except Exception:
             pass
     return "20:00"
+
+def format_time_to_12h(time_str: str) -> str:
+    """Converts a 24-hour time string like '20:00' to a friendly 12-hour string like '08:00 PM'."""
+    if not time_str:
+        return "08:00 PM"
+    s = str(time_str).strip()
+    if "am" in s.lower() or "pm" in s.lower():
+        return s
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(s, "%H:%M")
+        return dt.strftime("%I:%M %p")
+    except Exception:
+        return s
 
 @with_db_retry()
 def set_system_setting(key: str, value: str, db_path: Path = DB_PATH) -> None:

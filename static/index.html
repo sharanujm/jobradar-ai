@@ -875,7 +875,7 @@
                                         ⚡ Next Automated Pre-Scrape
                                     </div>
                                     <div style="font-size: 18px; font-weight: 800; color: #4f46e5;" id="pipeline-next-scrape">
-                                        19:30 (7:30 PM)
+                                        07:30 PM IST
                                     </div>
                                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
                                         30 mins before your daily digest
@@ -886,7 +886,7 @@
                                         📬 Scheduled 100-Job Digest
                                     </div>
                                     <div style="font-size: 18px; font-weight: 800; color: #059669;" id="pipeline-next-digest">
-                                        20:00 (8:00 PM)
+                                        08:00 PM IST
                                     </div>
                                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
                                         Delivered directly to your inbox
@@ -1047,17 +1047,77 @@
                             </button>
                         </div>
 
-                        <!-- Custom Time Picker -->
+                        <!-- 12-Hour Daily Delivery Time Selector -->
                         <div class="form-group">
-                            <label class="form-label">Daily Delivery Time (Choose When to Receive Your 100 Jobs)</label>
-                            <div style="display:flex; gap:12px; align-items:center;">
-                                <input type="time" id="input-schedule-time" class="form-control" style="font-size:16px; font-weight:700; width:180px;" value="20:00" onchange="saveCustomScheduleTime()">
-                                <button class="btn btn-primary" onclick="saveCustomScheduleTime()">
-                                    <span>&#128197; Save My Schedule</span>
+                            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>Daily Delivery Time (12-Hour AM/PM Format)</span>
+                                <span class="badge" style="background:var(--primary-subtle); color:var(--primary); font-size:11px;">⏰ IST Timezone</span>
+                            </label>
+                            
+                            <!-- Quick 12-Hour Preset Buttons -->
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="applyTimePreset('08:00 PM', 'automation')">
+                                    🌙 08:00 PM (Recommended)
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="applyTimePreset('09:00 AM', 'automation')">
+                                    ☀️ 09:00 AM (Morning)
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="applyTimePreset('07:00 PM', 'automation')">
+                                    💼 07:00 PM (Evening)
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="applyTimePreset('10:00 PM', 'automation')">
+                                    🌌 10:00 PM (Night)
                                 </button>
                             </div>
-                            <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">
-                                When set (e.g. 20:00 PM), the scraper will automatically run 30 minutes beforehand (19:30 PM) so your email has the newest possible positions!
+
+                            <!-- 12-Hour Inputs: Hour + Minute + AM/PM -->
+                            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                                <div style="display:flex; align-items:center; gap:6px; background:var(--bg-main); border:1px solid var(--border-default); border-radius:var(--radius-md); padding:6px 12px;">
+                                    <select id="auto-time-hour" class="form-control" style="font-size:16px; font-weight:800; width:65px; border:none; padding:4px; text-align:center; background:transparent;" onchange="on12hTimeChanged('automation')">
+                                        <option value="12">12</option>
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08" selected>08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                    </select>
+                                    <span style="font-size:18px; font-weight:800; color:var(--text-muted);">:</span>
+                                    <select id="auto-time-minute" class="form-control" style="font-size:16px; font-weight:800; width:65px; border:none; padding:4px; text-align:center; background:transparent;" onchange="on12hTimeChanged('automation')">
+                                        <option value="00" selected>00</option>
+                                        <option value="05">05</option>
+                                        <option value="10">10</option>
+                                        <option value="15">15</option>
+                                        <option value="20">20</option>
+                                        <option value="25">25</option>
+                                        <option value="30">30</option>
+                                        <option value="35">35</option>
+                                        <option value="40">40</option>
+                                        <option value="45">45</option>
+                                        <option value="50">50</option>
+                                        <option value="55">55</option>
+                                    </select>
+                                    <select id="auto-time-ampm" class="form-control" style="font-size:15px; font-weight:800; width:75px; border:none; padding:4px; color:var(--primary); background:transparent;" onchange="on12hTimeChanged('automation')">
+                                        <option value="AM">AM</option>
+                                        <option value="PM" selected>PM</option>
+                                    </select>
+                                </div>
+
+                                <button class="btn btn-primary" onclick="saveCustomScheduleTime()">
+                                    <span>💾 Save My Schedule</span>
+                                </button>
+                            </div>
+
+                            <!-- Hidden input for continuous backward compatibility -->
+                            <input type="hidden" id="input-schedule-time" value="20:00">
+
+                            <div id="schedule-helper-text" style="font-size:12px; color:var(--text-muted); margin-top:8px;">
+                                📬 Delivering daily at <b>08:00 PM IST</b> (Automated pre-scrape runs 30 mins before at <b>07:30 PM IST</b>).
                             </div>
                         </div>
 
@@ -2186,19 +2246,51 @@
                 </div>
             </div>
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
-                <div class="form-group">
-                    <label class="form-label">Preferred Daily Digest Time</label>
-                    <input type="time" id="profile-modal-time" class="form-control" value="20:00">
-                </div>
-                <div class="form-group" style="display:flex; flex-direction:column; justify-content:center;">
-                    <label class="form-label">Notice Period</label>
-                    <select id="profile-modal-notice" class="form-control" style="font-size:12px;">
-                        <option value="Immediate" selected>Immediate (0 Days)</option>
-                        <option value="15 Days">15 Days</option>
-                        <option value="30 Days">1 Month (30 Days)</option>
-                        <option value="60 Days">2 Months (60 Days)</option>
+            <!-- 12-Hour Daily Digest Time (Modal) -->
+            <div class="form-group">
+                <label class="form-label" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>Preferred Daily Digest Time (12-Hour AM/PM)</span>
+                    <span class="badge" style="background:var(--primary-subtle); color:var(--primary); font-size:10.5px;">⏰ 12-Hour Format</span>
+                </label>
+                <div style="display:flex; align-items:center; gap:8px; background:var(--bg-main); border:1px solid var(--border-default); border-radius:var(--radius-md); padding:6px 12px; width:fit-content;">
+                    <select id="modal-time-hour" class="form-control" style="font-size:15px; font-weight:800; width:65px; border:none; padding:4px; text-align:center; background:transparent;" onchange="on12hTimeChanged('modal')">
+                        <option value="12">12</option>
+                        <option value="01">01</option>
+                        <option value="02">02</option>
+                        <option value="03">03</option>
+                        <option value="04">04</option>
+                        <option value="05">05</option>
+                        <option value="06">06</option>
+                        <option value="07">07</option>
+                        <option value="08" selected>08</option>
+                        <option value="09">09</option>
+                        <option value="10">10</option>
+                        <option value="11">11</option>
                     </select>
+                    <span style="font-size:16px; font-weight:800; color:var(--text-muted);">:</span>
+                    <select id="modal-time-minute" class="form-control" style="font-size:15px; font-weight:800; width:65px; border:none; padding:4px; text-align:center; background:transparent;" onchange="on12hTimeChanged('modal')">
+                        <option value="00" selected>00</option>
+                        <option value="05">05</option>
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="20">20</option>
+                        <option value="25">25</option>
+                        <option value="30">30</option>
+                        <option value="35">35</option>
+                        <option value="40">40</option>
+                        <option value="45">45</option>
+                        <option value="50">50</option>
+                        <option value="55">55</option>
+                    </select>
+                    <select id="modal-time-ampm" class="form-control" style="font-size:14px; font-weight:800; width:70px; border:none; padding:4px; color:var(--primary); background:transparent;" onchange="on12hTimeChanged('modal')">
+                        <option value="AM">AM</option>
+                        <option value="PM" selected>PM</option>
+                    </select>
+                </div>
+                <!-- Hidden input for continuous backward compatibility -->
+                <input type="hidden" id="profile-modal-time" value="20:00">
+                <div id="modal-time-display-hint" style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">
+                    Digest delivered daily at <b>08:00 PM IST</b>
                 </div>
             </div>
 
